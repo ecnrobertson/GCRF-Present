@@ -1,0 +1,96 @@
+---
+title: "GCRF"
+output:
+  word_document: default
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(cowplot)
+library(tidyverse)
+Avg <- read.csv("averages.csv")
+head(Avg)
+```
+```{r}
+qqnorm(Avg$pen_length)
+qqline(Avg$pen_length)
+t.test(Avg$pen_length~location, var.equal=T, data=Avg, )
+```
+```{r}
+ggplot(Avg)+
+  geom_boxplot(aes(x=location, y=pen_length, fill=location), color="black", alpha=.5)+
+  theme_classic()+
+  labs(title="Pennaceous Barbule Length", x="Location", y="Barbule Length (mm)")
+ggsave("pen_length.png")
+```
+
+```{r}
+qqnorm(Avg$pen_density)
+qqline(Avg$pen_density)
+t.test(Avg$pen_density~location, var.equal=F, data=Avg)
+ggplot(Avg)+
+  geom_boxplot(aes(x=location, y=pen_density))
+```
+```{r}
+ggplot(Avg)+
+  geom_boxplot(aes(x=location, y=pen_density, fill=location), color="black", alpha=.5)+
+  theme_classic()+
+  labs(title="Pennaceous Barbule Density", x="Location", y="Barbule Density (barbules/mm)")
+ggsave("pen_density.png")
+```
+
+```{r}
+qqnorm(Avg$plum_length)
+qqline(Avg$plum_length)
+t.test(Avg$plum_length~location, var.equal=F, data=Avg)
+```
+```{r}
+ggplot(Avg)+
+  geom_boxplot(aes(x=location, y=plum_length, fill=location), color="black", alpha=.5)+
+  theme_classic()+
+  labs(title="Plumulaceous Barbule Length", x="Location", y="Barbule Length (mm)")
+ggsave("plum_length.png")
+```
+
+```{r}
+qqnorm(Avg$plum_density)
+qqline(Avg$plum_density)
+t.test(Avg$plum_density~location, var.equal=F, data=Avg)
+```
+```{r}
+ggplot(Avg)+
+  geom_boxplot(aes(x=location, y=plum_density, fill=location), color="black", alpha=.5)+
+  theme_classic()+
+  labs(title="Plumulaceous Barbule Density", x="Location", y="Barbule Density (barbules/mm)")
+ggsave("plum_density.png")
+```
+
+```{r}
+qqnorm(Avg$plum_node_den)
+qqline(Avg$plum_node_den)
+t.test(Avg$plum_node_den~location, var.equal=F, data=Avg)
+```
+```{r}
+ggplot(Avg)+
+  geom_boxplot(aes(x=location, y=plum_node_den, fill=location), color="black", alpha=.5)+
+  theme_classic()+
+  labs(title="Plumulaceous Node Density", x="Location", y="Node Density (nodes/mm)")
+ggsave("node_density.png")
+```
+
+
+##OMG MAP TIME
+
+```{r}
+
+
+```
+
+
+
+
