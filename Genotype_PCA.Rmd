@@ -1,0 +1,81 @@
+---
+title: "SNP_PCA"
+output: html_document
+date: "2023-12-30"
+---
+
+#INTRODUCTION
+Here I will be going through the steps for creating a PCA using genotype information to assess if there is population structure in my data. I'm starting with vcf files that have been filtered as follows
+-only biallilic alleles
+-only SNPs
+-fraction of missing genotypes is <25%
+-min allele freq is 0.05
+-max allele freq is .95
+-depth greater than or equal to 4
+
+Potential issue: I haven't downsampeled, so coverage differences might become an issue.
+
+Following steps laid out by chatGPT, so we'll see how it goes. I'm using my conda bioninf environment which has bcftools, vcftools, etc downloaded and GWAS environment which has PLINK and (eventually) GEMMA downloaded.
+
+My data is currently structured as follows:
+raw bam files: /scratch/alpine/ericacnr@colostate.edu/GCRF/Fastq/bam/mkdup_bam
+filtered VCF files: /scratch/alpine/ericacnr@colostate.edu/GCRF/Fastq/genotypes/called_genotypes/filtered
+PCA files: /scratch/alpine/ericacnr@colostate.edu/GCRF/Fastq/PCA
+
+
+
+1. Data Preparation:
+Convert VCF to PLINK Format:
+I'm going to be doing this on my merged VCF file, which has been filtered folliowing the information for BEAGLE_imputation and VSQ hard filtering. 
+This is a stupidly long file name: GCRF.merged_gatk.SNP.filtered_gatkVQSR2.PASS.8miss.rm_scaf_lth10.vcf.recode.vcf
+
+```{}
+# Install and use BCFtools to convert VCF to PLINK format
+bcftools view --output-type v --output-file ../../../PCA/GCRF_merged_data_plink.vcf GCRF.merged_gatk.SNP.filtered_gatkVQSR2.PASS.8miss.rm_scaf_lth10.vcf.recode.vcf
+
+cd ../../../PCA/
+conda deactivate
+conda activate GWAS
+
+plink --vcf GCRF_merged_data_plink.vcf --allow-extra-chr --make-bed --out GCRF_merged_data_plink
+#--allow-extra-chr is because of the way the chromosome codes are (maybe with underscores? it's not happy)
+```
+I now have the following files:
+GCRF_merged_data_plink.bed  
+GCRF_merged_data_plink.log    
+GCRF_merged_data_plink.vcf
+GCRF_merged_data_plink.bim  
+GCRF_merged_data_plink.nosex
+GCRF_merged_data_plink.fam  
+GCRF_merged_data_plink.save
+
+2. Calculate Genetic Distances:
+Generate Genetic Distances:
+```{r}
+plink --bfile GCRF_merged_data_plink --allow-extra-chr --distance square 1-ibs --out merged_data_distances
+```
+This created:
+merged_data_distances.log
+merged_data_distances.mdist
+merged_data_distances.mdist.id
+merged_data_distances.nosex
+
+3. Run a PCA:
+```{}
+plink --bfile ./merged_data_distances --pca --out merged_data_pca
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
