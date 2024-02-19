@@ -73,16 +73,26 @@ dev.off()
 
 #Okay so these graphs don't look too great, so might need to rerun the bslmm and see if I get "better mixing".
 
-
+# cat GCRF_feather_PC.bslmm.param.txt | cut -d "_" -f 2 > scaffold_nums.txt
+# sed '1d' scaffold_nums.txt > scaffold_nums_clean_featherPC.txt
+# head scaffold_nums_clean_featherPC.txt 
 
 
 # library to speed up loading of big tables
+
+setwd("~/Desktop/GWAS/GenomicPipeline/data/bslmm")
+
 library(data.table)
+
+nums <- read.table("scaffold_nums_clean_featherPC.txt")
+colnames(nums) <- "chr"
 
 # Load parameters output
 # ==============================================================================
 params<-fread("GCRF_feather_PC.bslmm.param.txt",header=T,sep="\t", data.table=F)
 # ==============================================================================
+
+params <- data.frame(nums, params[,-1])
 
 # Get variants with sparse effect size on phenotypes 
 # ==============================================================================
@@ -115,9 +125,9 @@ top001<-params.effects.sort[params.effects.sort$eff>quantile(params.effects.sort
 # ------------------------------------------------------------------------------
 
 # write tables
-write.table(top1, file="top1eff.dsv", quote=F, row.names=F, sep="\t")
-write.table(top01, file="top0.1eff.dsv", quote=F, row.names=F, sep="\t")
-write.table(top001, file="top0.01eff.dsv", quote=F, row.names=F, sep="\t")
+#write.table(top1, file="top1eff.dsv", quote=F, row.names=F, sep="\t")
+#write.table(top01, file="top0.1eff.dsv", quote=F, row.names=F, sep="\t")
+#write.table(top001, file="top0.01eff.dsv", quote=F, row.names=F, sep="\t")
 
 # ==============================================================================
 # Get variants with high Posterior Inclusion Probability (PIP) == gamma
@@ -141,10 +151,10 @@ pip25<-params.pipsort[params.pipsort$gamma>=0.25,]
 pip50<-params.pipsort[params.pipsort$gamma>=0.50,]
 
 # write tables
-write.table(pip01, file="pip01.dsv", quote=F, row.names=F, sep="\t")
-write.table(pip10, file="pip10.dsv", quote=F, row.names=F, sep="\t")
-write.table(pip25, file="pip25.dsv", quote=F, row.names=F, sep="\t")
-write.table(pip50, file="pip50.dsv", quote=F, row.names=F, sep="\t")
+#write.table(pip01, file="pip01.dsv", quote=F, row.names=F, sep="\t")
+#write.table(pip10, file="pip10.dsv", quote=F, row.names=F, sep="\t")
+#write.table(pip25, file="pip25.dsv", quote=F, row.names=F, sep="\t")
+#write.table(pip50, file="pip50.dsv", quote=F, row.names=F, sep="\t")
 # ------------------------------------------------------------------------------
 
 # ==============================================================================
@@ -152,18 +162,16 @@ write.table(pip50, file="pip50.dsv", quote=F, row.names=F, sep="\t")
 # ==============================================================================
 # Prepare data
 # ------------------------------------------------------------------------------
-library(dplyr)
-params.ss <- params %>% slice_sample(n=200000000, replace=F)
 
 # add linkage group column (chr)
-chr<-gsub("lg|_.+","",params.ss$rs)
-params.ss["chr"]<-chr
+chr<-gsub("scaffold","",params$chr)
+params["chr"]<-chr
 
 # sort by linkage group and position
-params.ss.sort<-params.ss[order(as.numeric(params.ss$chr), params.ss$rs),]
+params.sort<-params[order(as.numeric(params$chr), params$rs),]
 
 # get list of linkage groups/chromosomes
-chrs<-sort(as.numeric(unique(chr)))
+chrs<-sort(unique(as.numeric(chr)))
 # ------------------------------------------------------------------------------
 
 # Plot to a png file because the number of dots is very high
@@ -171,20 +179,19 @@ chrs<-sort(as.numeric(unique(chr)))
 # also opening vectorial files with many objects is slow
 # ------------------------------------------------------------------------------
 # ------------------------------------------------------------------------------
-png(file="pip_plot_test.png", width=11.7,height=8.3,units="in",res=200)
+png(file="pip_plot_feather0.1.png", width=11.7,height=8.3,units="in",res=200)
 
 # set up empty plot
-plot(-1,-1,xlim=c(0,nrow(params.ss.sort)),ylim=c(0,1),ylab="PIP",xlab="linkage group", xaxt="n")
-
+plot(-1,-1,xlim=c(0,nrow(params.sort)),ylim=c(0,1),ylab="PIP",xlab="linkage group", xaxt="n")
 
 # plot grey bands for chromosome/linkage groups
 # ------------------------------------------------------------------------------
 start<-1
 lab.pos<-vector()
 for (ch in chrs){
-  size<-nrow(params.ss.sort[params.ss.sort$chr==ch,])
+  size<-nrow(params.sort[params.sort$chr==ch,])
   cat ("CH: ", ch, "\n")
-  colour<-"light grey"
+  colour<-"lightgrey"
   if (ch%%2 > 0){
     polygon(c(start,start,start+size,start+size,start), c(0,1,1,0,0), col=colour, border=colour)
   }
@@ -196,7 +203,7 @@ for (ch in chrs){
 }
 # Add variants outside linkage groups
 chrs<-c(chrs,"NA")
-size<-nrow(params.ss.sort[params.ss.sort$chr=="NA",])
+size<-nrow(params.sort[params.sort$chr=="NA",])
 lab.pos<-c(lab.pos, start+size/2)
 # ------------------------------------------------------------------------------
 
@@ -206,38 +213,39 @@ axis(side=1,at=lab.pos,labels=chrs,tick=F)
 
 # ------------------------------------------------------------------------------
 # rank of variants across linkage groups
-x<-seq(1,length(params.ss.sort$gamma),1)
+x<-seq(1,length(params.sort$gamma),1)
 # PIP 
-y<-params.ss.sort$gamma
+y<-params.sort$gamma
 # sparse effect size, used for dot size
-z<-params.ss.sort$eff
+z<-params.sort$eff
 # log-transform to enhance visibility
 z[z==0]<-0.00000000001
 z<-1/abs(log(z))
 # plot
-symbols(x,y,circles=z, bg="black",inches=1/5, fg=NULL,add=T)
+symbols(x,y,circles=z, bg="grey14",inches=1/5, fg=NULL,add=T)
 # ------------------------------------------------------------------------------
 
 # highligh high PIP variants (PIP>=0.25)
 # ------------------------------------------------------------------------------
 # plot threshold line
-abline(h=0.25,lty=3,col="dark grey")
+abline(h=0.1,lty=3,col="dark grey")
 # rank of high PIP variants across linkage groups
-x<-match(params.ss.sort$gamma[params.ss.sort$gamma>=0.25],params.ss.sort$gamma)
+x<-match(params.sort$gamma[params.sort$gamma>=0.1],params.sort$gamma)
 # PIP
-y<-params.ss.sort$gamma[params.ss.sort$gamma>=0.25]
+y<-params.sort$gamma[params.sort$gamma>=0.1]
 # sparse effect size, used for dot size
-z<-params.ss.sort$eff[params.ss.sort$gamma>=0.25]
+z<-params.sort$eff[params.sort$gamma>=0.1]
 z<-1/abs(log(z))
 
-symbols(x,y,circles=z, bg="red",inches=1/5,fg=NULL,add=T)
+symbols(x,y,circles=z, bg="tomato",inches=1/5,fg=NULL,add=T)
 # ------------------------------------------------------------------------------
 
 # add label high PIP variants
-text(x,y,labels=params.ss.sort$rs[params.ss.sort$gamma>=0.25], adj=c(0,0), cex=0.8)
+text(x,y,labels=params.sort$rs[params.sort$gamma>=0.1], adj=c(0,0), cex=0.8)
 # ------------------------------------------------------------------------------
 # ------------------------------------------------------------------------------
 
 # close device
 dev.off()
 # ==============================================================================
+
