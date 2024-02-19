@@ -1,0 +1,544 @@
+---
+title: "GCRF Analysis"
+output:
+  word_document: default
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(cowplot)
+library(tidyverse)
+#this is me reading in the csv
+Avg <- read.csv("averages.csv")
+head(Avg)
+#WM <- Avg[1:10]
+#head(WM)
+#WM <- WM[,3:10]
+#head(WM)
+#round(cor(WM), digits=2)
+```
+
+```{r}
+#this is running a qqplot to assess the data, and running a one direction t.test
+#to run the qqplot, select both qqnorm and qqpline lines at the same time, COMAND-ENTER to run lines
+qqnorm(Avg$pen_length)
+qqline(Avg$pen_length)
+#this is a one direction t.test, you can fiddle with the direction but start with what we hypothesized
+t.test(Avg$pen_length~location, var.equal=T, data=Avg, alternative="greater")
+```
+```{r}
+ggplot(Avg)+
+  geom_boxplot(aes(x=location, y=pen_length, fill=location), color="black", alpha=.5)+
+  theme_classic()+
+  labs(title="Pennaceous Barbule Length", x="Location", y="Barbule Length (mm)")
+ggsave("pen_length.png")
+```
+
+```{r}
+qqnorm(Avg$pen_density)
+qqline(Avg$pen_density)
+t.test(Avg$pen_density~location, var.equal=F, data=Avg, alternative="less")
+ggplot(Avg)+
+  geom_boxplot(aes(x=location, y=pen_density))
+```
+```{r}
+ggplot(Avg)+
+  geom_boxplot(aes(x=location, y=pen_density, fill=location), color="black", alpha=.5)+
+  theme_classic()+
+  labs(title="Pennaceous Barbule Density", x="Location", y="Barbule Density (barbules/mm)")
+ggsave("pen_density.png")
+```
+
+```{r}
+qqnorm(Avg$plum_length)
+qqline(Avg$plum_length)
+t.test(Avg$plum_length~location, var.equal=F, data=Avg)
+```
+```{r}
+ggplot(Avg)+
+  geom_boxplot(aes(x=location, y=plum_length, fill=location), color="black", alpha=.5)+
+  theme_classic()+
+  labs(title="Plumulaceous Barbule Length", x="Location", y="Barbule Length (mm)")
+ggsave("plum_length.png")
+```
+
+```{r}
+qqnorm(Avg$plum_density)
+qqline(Avg$plum_density)
+t.test(Avg$plum_density~location, var.equal=F, data=Avg)
+```
+```{r}
+ggplot(Avg)+
+  geom_boxplot(aes(x=location, y=plum_density, fill=location), color="black", alpha=.5)+
+  theme_classic()+
+  labs(title="Plumulaceous Barbule Density", x="Location", y="Barbule Density (barbules/mm)")
+ggsave("plum_density.png")
+```
+
+```{r}
+qqnorm(Avg$plum_node_den)
+qqline(Avg$plum_node_den)
+t.test(Avg$plum_node_den~location, var.equal=F, data=Avg)
+```
+```{r}
+ggplot(Avg)+
+  geom_boxplot(aes(x=location, y=plum_node_den, fill=location), color="black", alpha=.5)+
+  theme_classic()+
+  labs(title="Plumulaceous Node Density", x="Location", y="Node Density (nodes/mm)")
+ggsave("node_density.png")
+```
+
+
+```{r}
+measures <- read.csv("RoFi Feather Measurements2.csv")
+WM <- measures %>% filter(measures$Location=="White Mountain")
+PP <- measures %>% filter(measures$Location=="Puite Pass")
+head(measures)
+ggplot()+
+  geom_point(data=WM, aes(x=BGP_ID, y=Penn.Barbule.Length.1..mm.))
+library("lme4")
+Penn.Bar <- lmer(Penn.Barbule.Length.1..mm.~BGP_ID+(1|Location), data=measures)
+tab_model(Penn.Bar)
+measures$BGP_ID<- as.factor(measures$BGP_ID)
+summary(Penn.Bar)
+
+mod<- lm(Penn.Barbule.Length.1..mm.~BGP_ID+Location, data=measures)
+summary(mod)
+library(car)
+Anova(mod) #this one is better than little a anova because it accounts for type II error more appropriately
+unique(measures$Location)
+
+a<-ggplot(aes(x=BGP_ID, y=Penn.Barbule.Length.1..mm.), data= measures)+
+  geom_boxplot()+
+  geom_point()+
+  theme_classic()
+
+measures$Location
+
+
+str(measures)
+sub3 <- read.csv("RoFi Feather Measurements 3 Subset.csv")
+Penn.Bar3 <- lmer(Penn.Barbule.Length.1..mm.~BGP_ID+(1|Location), data=sub3)
+tab_model(Penn.Bar3)
+```
+
+```{r}
+GCRF <- read.csv("~/Desktop/GCRF _Blood_ Feathers.csv")
+GCRF$Location_code
+PiutePass <- GCRF %>% filter(GCRF$Location_code=="PIPA")
+write_csv(PiutePass, "GCRF_PIPA_BF.csv")
+WhiteMnt <- GCRF %>% filter(GCRF$Location_code=="WMTN")
+write_csv(WhiteMnt, "GCRF_WMNT_BF.csv")
+nrow(PiutePass)
+nrow(WhiteMnt)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+#ALL THE DATA
+
+```{r}
+data <- read.csv("/Users/erobertson/Desktop/PhD/GCRF_Data.csv")
+data <- data[,1:8]
+library(dplyr)
+library(ggpubr)
+pen_length_avg <- data %>%
+  group_by(Location, Individual) %>%
+  summarize(AvgLength=mean(Pen_Length))
+ggqqplot(data$Pen_Length)
+
+pen_length_avg <- pen_length_avg[-1,]
+
+library(rstatix)
+data %>%
+  group_by(Location, Individual) %>%
+  identify_outliers(Pen_Length)
+
+anova_pen_length <- aov(AvgLength ~ Location, data= pen_length_avg)
+ggqqplot(residuals(anova_pen_length))
+shapiro_test(residuals(anova_pen_length))
+#VIOLATES NORMALITY ASSUMPTION
+kruskal.test(AvgLength ~ Location, data=pen_length_avg)
+summary(anova_pen_length)
+
+#significance value of 0.0476 that PIPA is higher than WMNT
+wilcox.test(AvgLength ~ Location, data=pen_length_avg, alternative="greater")
+#t.test(AvgLength ~ Location, data=pen_length_avg, alternative="less")
+
+ggplot(pen_length_avg)+
+  geom_boxplot(aes(x=Location, y=AvgLength))+
+  theme_classic()
+
+grubbs.test(pen_length_avg$AvgLength, opposite=FALSE)
+#highest value 0.608666666666667 is an outlier
+
+pen_length_o <- pen_length_avg[-15,]
+wilcox.test(AvgLength ~ Location, data=pen_length_o, alternative="greater")
+#no longer significant when dropping the outlier :(
+```
+
+```{r}
+###################
+pen_density_avg <- data %>%
+  group_by(Location, Individual) %>%
+  summarize(AvgDensity=mean(Pen_Density))
+
+pen_density_avg <- pen_density_avg[-1,]
+
+anova_pen_density <- aov(AvgDensity ~ Location, data= pen_density_avg)
+summary(anova_pen_density)
+ggqqplot(residuals(anova_pen_density))
+
+#not significant, p=0.093
+wilcox.test(AvgDensity ~ Location, data=pen_density_avg, alternative="less")
+#t.test(AvgDensity ~ Location, data=pen_density_avg, alternative="greater")
+
+ggplot(pen_density_avg)+
+  geom_boxplot(aes(x=Location, y=AvgDensity, fill=Location), alpha=.5)+
+  scale_fill_manual(values=c("blue", "red"))+
+  theme_classic()
+```
+
+```{r}
+######################
+plu_length_avg <- data %>%
+  group_by(Location, Individual) %>%
+  summarize(AvgLength=mean(Plu_Length))
+
+plu_length_avg <- plu_length_avg[-1,]
+
+anova_plu_length <- aov(AvgLength ~ Location, data= plu_length_avg)
+summary(anova_plu_length)
+ggqqplot(residuals(anova_plu_length))
+
+#wilcox.test(AvgLength ~ Location, data=plu_length_avg, alternative="greater")
+#significant that PIPA is greater than WMNT, p=0.033
+t.test(AvgLength ~ Location, data=plu_length_avg, alternative="greater")
+
+ggplot(plu_length_avg)+
+  geom_boxplot(aes(x=Location, y=AvgLength))+
+  theme_classic()
+
+ggplot(plu_length_avg, aes(x=Location, y=AvgLength))+
+  geom_jitter()+
+  theme_classic()+
+  stat_summary(fun.y=mean, geom="point", shape=18,
+                 size=3, color="red")
+
+grubbs.test(plu_length_avg$AvgLength, opposite=TRUE)
+#not valid outliers
+```
+
+```{r}
+######################
+plu_density_avg <- data %>%
+  group_by(Location, Individual) %>%
+  summarize(AvgDensity=mean(Plu_Density))
+
+plu_density_avg <- plu_density_avg[-1,]
+
+anova_plu_density <- aov(AvgDensity ~ Location, data= plu_density_avg)
+summary(anova_plu_density)
+ggqqplot(residuals(anova_plu_density))
+
+#wilcox.test(AvgDensity ~ Location, data=plu_density_avg, alternative="greater")
+#not significant
+t.test(AvgDensity ~ Location, data=plu_density_avg, alternative="less")
+
+ggplot(plu_density_avg)+
+  geom_boxplot(aes(x=Location, y=AvgDensity))+
+  theme_classic()
+```
+
+```{r}
+########################
+plu_nodes_avg <- data %>%
+  group_by(Location, Individual) %>%
+  summarize(AvgNodes=mean(Plu_Nodes))
+
+plu_nodes_avg <- plu_nodes_avg[-1,]
+
+anova_plu_nodes <- aov(AvgNodes ~ Location, data= plu_nodes_avg)
+summary(anova_plu_nodes)
+ggqqplot(residuals(anova_plu_nodes))
+
+kruskal.test(AvgNodes ~ Location, data=plu_nodes_avg)
+
+#significant, p=0.0098
+wilcox.test(AvgNodes ~ Location, data=plu_nodes_avg, alternative="less")
+#t.test(AvgNodes ~ Location, data=plu_nodes_avg, alternative="less")
+ggplot(plu_nodes_avg)+
+  geom_boxplot(aes(x=Location, y=AvgNodes))+
+  theme_classic()
+
+ggplot(plu_nodes_avg, aes(x=Location, y=AvgNodes))+
+  geom_jitter()+
+  theme_classic()+
+  stat_summary(fun.y=mean, geom="point", shape=18,
+                 size=3, color="red")
+
+ggplot(plu_nodes_avg, aes(x=Location, y=AvgNodes))+
+  geom_jitter()+
+  theme_classic()+
+  stat_summary(fun.y=mean, geom="point", shape=18,
+                 size=3, color="red")
+#removing outlier, still significant
+library(outliers)
+test <- grubbs.test(plu_nodes_avg$AvgNodes, opposite=TRUE)
+plu_nodes_avg_o <- plu_nodes_avg[c(-49, -62),]
+
+#Still significant at p=0.008
+wilcox.test(AvgNodes ~ Location, data=plu_nodes_avg_o, alternative="less")
+
+ggplot(plu_nodes_avg_o, aes(x=Location, y=AvgNodes))+
+  geom_jitter()+
+  theme_classic()+
+  stat_summary(fun.y=mean, geom="point", shape=18,
+                 size=3, color="red")
+
+```
+
+#OTHER MORPHOLOGICAL DATA
+
+```{r}
+morpho <- read.csv("~/Desktop/GCRF/R data/GCRF_morphology.csv")
+morpho <- morpho[1:189,]
+morpho <- na.omit(morpho)
+wing <- as.data.frame(cbind(morpho$site, morpho$BGP_ID, morpho$wing))
+colnames(wing) <- c("site", "BGP_ID", "measure")
+wing <- wing[-58,]
+wing$measure <- as.numeric(wing$measure)
+
+mod <- lm(measure ~ site, data=wing)
+ggqqplot(residuals(mod))
+shapiro.test(residuals(mod))
+
+is.na(wing)
+#significant with a two way test, PIPA is higher, p=0.0002
+t.test(measure ~ site, data=wing)
+ggplot()+
+  geom_boxplot(aes(x=site, y=measure), data=wing)
+
+ggplot(wing, aes(x=site, y=measure))+
+  geom_jitter()+
+  theme_classic()+
+  stat_summary(fun.y=mean, geom="point", shape=18,
+                 size=3, color="red")
+
+grubbs.test(wing$measure)
+#no outlieres
+```
+
+```{r}
+tarsus <- as.data.frame(cbind(morpho$site, morpho$BGP_ID, morpho$tarsus))
+colnames(tarsus) <- c("site", "BGP_ID", "measure")
+tarsus <- tarsus[-58,]
+tarsus$measure <- as.numeric(tarsus$measure)
+
+mod <- lm(measure ~ site, data=tarsus)
+ggqqplot(residuals(mod))
+shapiro.test(residuals(mod))
+
+#not a significant difference
+wilcox.test(measure ~ site, data=tarsus, alternative="greater")
+#ggplot()+
+  geom_boxplot(aes(x=site, y=measure), data=tarsus)
+
+```
+
+```{r}
+weight <- as.data.frame(cbind(morpho$site, morpho$BGP_ID, morpho$weight))
+colnames(weight) <- c("site", "BGP_ID", "measure")
+weight <- weight[-92,]
+weight <- na.omit(weight)
+weight$measure <- as.numeric(weight$measure)
+
+mod <- lm(measure ~ site, data=weight)
+ggqqplot(residuals(mod))
+shapiro.test(residuals(mod))
+
+#not significant
+t.test(measure ~ site, data=weight, alternative="greater")
+#ggplot()+
+  geom_boxplot(aes(x=site, y=measure), data=tarsus)
+```
+
+```{r}
+tail <- as.data.frame(cbind(morpho$site, morpho$BGP_ID, morpho$tail_length))
+colnames(tail) <- c("site", "BGP_ID", "measure")
+
+tail <- na.omit(tail)
+#tail <- tail[-92,]
+tail$measure <- as.numeric(tail$measure)
+
+mod <- lm(measure ~ site, data=tail)
+ggqqplot(residuals(mod))
+shapiro.test(residuals(mod))
+
+#two way test is significant, p=0.037; greater p=0.0187
+wilcox.test(measure ~ site, data=tail, alternative="greater")
+
+tail$measure <- as.factor(tail$measure)
+
+ggplot(tail, aes(x=site, y=measure))+
+  geom_jitter()
+
+grubbs.test(tail$measure)
+tail_o <- tail[-29,]
+#still significant without the outlier, p=0.014
+wilcox.test(measure ~ site, data=tail_o, alternative="greater")
+```
+
+```{r}
+bristle <- as.data.frame(cbind(morpho$site, morpho$BGP_ID, morpho$bristle))
+colnames(bristle) <- c("site", "BGP_ID", "measure")
+
+bristle <- na.omit(bristle)
+#tail <- tail[-92,]
+bristle$measure <- as.numeric(bristle$measure)
+
+mod <- lm(measure ~ site, data=bristle)
+ggqqplot(residuals(mod))
+shapiro.test(residuals(mod))
+
+#not significant, p=0.1619
+wilcox.test(measure ~ site, data=bristle, alternative="greater")
+
+grubbs.test(bristle$measure)
+bristle_o <- bristle[-80,]
+grubbs.test(bristle_o$measure)
+
+wilcox.test(measure ~ site, data=bristle_o)
+
+ggplot()+
+  geom_boxplot(aes(x=site, y=measure), data=bristle)
+
+```
+
+```{r}
+beak_depth <- as.data.frame(cbind(morpho$site, morpho$BGP_ID, morpho$beak_depth))
+colnames(beak_depth) <- c("site", "BGP_ID", "measure")
+
+beak_depth <- na.omit(beak_depth)
+#tail <- tail[-92,]
+beak_depth$measure <- as.numeric(beak_depth$measure)
+
+mod <- lm(measure ~ site, data=beak_depth)
+ggqqplot(residuals(mod))
+shapiro.test(residuals(mod))
+
+#not significant p=0.6394
+t.test(measure ~ site, data=beak_depth)
+
+ggplot(beak_depth, aes(x=site, y=measure))+
+  geom_jitter()+
+  theme_classic()+
+  stat_summary(fun.y=mean, geom="point", shape=18,
+                 size=3, color="red")
+
+grubbs.test(beak_depth$measure)
+beak_depth_o <- beak_depth[c(-91, -160),]
+#still not significant after removing outliers
+t.test(measure ~ site, data=beak_depth_o, alternative="less")
+```
+
+```{r}
+beak_width <- as.data.frame(cbind(morpho$site, morpho$BGP_ID, morpho$beak_width))
+colnames(beak_width) <- c("site", "BGP_ID", "measure")
+
+beak_width <- na.omit(beak_width)
+a <- c(62, 67, 70, 78, 83, 84, 89, 93, 94, 95, 96)
+beak_width <- beak_width[-a,]
+beak_width$measure <- as.numeric(beak_width$measure)
+
+mod <- lm(measure ~ site, data=beak_width)
+ggqqplot(residuals(mod))
+shapiro.test(residuals(mod))
+
+#just barely significant, p=0.04
+t.test(measure ~ site, data=beak_width, alternative="less")
+
+ggplot(beak_width, aes(x=site, y=measure))+
+  geom_jitter()+
+  theme_classic()+
+  stat_summary(fun.y=mean, geom="point", shape=18,
+                 size=3, color="red")
+grubbs.test(beak_width$measure)
+```
+
+```{r}
+color <- as.data.frame(cbind(morpho$site, morpho$BGP_ID, morpho$bill_color))
+colnames(color) <- c("site", "BGP_ID", "measure")
+
+color <- na.omit(color)
+a <- c(62, 67, 70, 78, 83, 84, 89, 93, 94, 95, 96)
+beak_width <- beak_width[-a,]
+color$measure <- as.numeric(color$measure)
+
+mod <- lm(measure ~ site, data=color)
+ggqqplot(residuals(mod))
+shapiro.test(residuals(mod))
+
+#not significant
+wilcox.test(measure ~ site, data=color)
+
+ggplot(color, aes(x=site, y=measure))+
+  geom_jitter()+
+  theme_classic()+
+  stat_summary(fun.y=mean, geom="point", shape=18,
+                 size=3, color="red")
+grubbs.test(beak_width$measure)
+```
+
+```{r}
+nare <- as.data.frame(cbind(morpho$site, morpho$BGP_ID, morpho$nare_length))
+colnames(nare) <- c("site", "BGP_ID", "measure")
+
+nare <- na.omit(nare)
+a <- c(62, 67, 70, 78, 83, 84, 89, 93, 94, 95, 96)
+beak_width <- beak_width[-a,]
+nare$measure <- as.numeric(nare$measure)
+
+mod <- lm(measure ~ site, data=nare)
+ggqqplot(residuals(mod))
+shapiro.test(residuals(mod))
+
+#super significant two way test! p=3.23e-06
+t.test(measure ~ site, data=nare)
+
+ggplot(nare, aes(x=site, y=measure))+
+  geom_jitter()+
+  theme_classic()+
+  stat_summary(fun.y=mean, geom="point", shape=18,
+                 size=3, color="red")
+grubbs.test(nare$measure)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
