@@ -1,0 +1,949 @@
+---
+title: "GCRF_GWAS_Workflow"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+date: "2024-01-04"
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "~/Desktop/GCRF/")
+```
+
+# INTRODUCTION
+Here I will be going through the steps for running a GWAS on a variety of morphological traits. I'm starting with vcf files that have been filtered as follows
+-only biallilic alleles
+-only SNPs
+-fraction of missing genotypes is <25%
+-min allele freq is 0.05
+-max allele freq is .95
+-depth greater than or equal to 4
+
+# WORKFLOW
+## 1. VQSR filtering
+This filtering is to remove errors in genotypes due to sequencing issues. The script I was given actually wants this to be run on an already merged vcf file, but when I tried this the filtering went fine but downstream the imputation kept failing due to a weird error. So I regrouped and did the filtering on each scaffold individually. This was implemented with the vqsr_filt.sh script, which had the following filters:
+
+-filter "QUAL < 30.0" --filter-name "QUAL30" \
+-filter "SOR > 3.0" --filter-name "SOR3" \
+-filter "FS > 60.0" --filter-name "FS60" \
+-filter "MQ < 40.0" --filter-name "MQ40" \
+-filter "QD < 2.0" --filter-name "QD2" \
+-filter "MQRankSum < -12.5" --filter-name "MQRankSum-12.5" \
+-filter "ReadPosRankSum < -8.0" --filter-name "ReadPosRankSum-8"
+
+The last two, MQRankSum and ReadPosRankSum didn't seem to apply, the error was something along the lines of the information not being present which didn't make sense since the header was there, but I opted to move on.
+
+Once all the scaffolds were filtered, I moved the files to a new folder for imputation.
+
+## 2. BEAGLE 4.1 Imputation
+I merged the vqsr filtered files into a single GCRF_merged file. Then I applied BEAGLE4.1 to impute missing genotypes. This was done with the script impute.sh.
+
+```{}
+BEAGLE_JAR="/projects/ericacnr@colostate.edu/mambaforge/envs/bioinf/java/beagle.27Jan18.7e1.jar"
+j=GCRF_merged.vcf.gz
+
+java -Xmx180G -jar $BEAGLE_JAR \
+gt="$j" \
+out=GCRF_merged_imputed4.1 \
+nthreads=48
+```
+
+The log had this as the final output: 
+Number of markers:             7942760
+Total time for building model: 2 hours 18 minutes 11 seconds
+Total time for sampling:       35 minutes 10 seconds
+Total run time:                3 hours 3 minutes 55 seconds
+
+Which suggests it was running the correct number of SNPs (7942760) however upon inspecting the file there was over 9mil lines, which doesn't make sense and suggested that some of the markers (~2mil) were being duplicated. Additionally, there was an error with the imputed files where the Chromosome position was missing in the header. So to fix that issue first, I cropped the header from the original merged file and added it to the imputed file.
+
+```{}
+(bioinf) [ericacnr@colostate.edu@login12 impute]$ zcat GCRF_merged_impute4.1.vcf.gz |grep -v "^#" > GCRF_merged_impute4.1.vcf_nohead
+(bioinf) [ericacnr@colostate.edu@login12 impute]$ zcat GCRF_merged.vcf.gz | grep "^#" > header.txt
+(bioinf) [ericacnr@colostate.edu@login12 impute]$ cat GCRF_merged_impute4.1.vcf_nohead | wc -l
+9943613
+(bioinf) [ericacnr@colostate.edu@login12 impute]$ cat header.txt GCRF_merged_impute4.1.vcf_nohead | bgzip -c > GCRF_merged_imputed4.1_newhead.vcf.gz
+```
+
+I then attempted to apply the bcftools norms function on this corrected file...
+
+```{}
+(bioinf) [ericacnr@colostate.edu@login12 impute]$ bcftools norm -d none -f ../../Reference/leucosticte_australis_final_assembly.fasta  GCRF_merged_imputed4.1_newhead.vcf.gz > GCRF_merged_impute4.1.rm_dup.vcf.gz
+Lines   total/split/joined/realigned/skipped:	9943613/0/0/0/0
+(bioinf) [ericacnr@colostate.edu@login12 impute]$ cat GCRF_merged_impute4.1.rm_dup.vcf.gz | grep -v "^#" | wc -l
+9943500
+```
+
+This still left me with too many lines, but I tried to apply plink anyway... it threw an error though, something about split chromosomes?
+
+```{}
+(GWAS) [ericacnr@colostate.edu@login12 impute]$ plink --vcf GCRF_merged_imputed4.1_newhead.vcf.gz --aec --recode --out GCRF_newhead
+PLINK v1.90b6.21 64-bit (19 Oct 2020)          www.cog-genomics.org/plink/1.9/
+(C) 2005-2020 Shaun Purcell, Christopher Chang   GNU General Public License v3
+Logging to GCRF_newhead.log.
+Options in effect:
+  --allow-extra-chr
+  --out GCRF_newhead
+  --recode
+  --vcf GCRF_merged_imputed4.1_newhead.vcf.gz
+
+15884 MB RAM detected; reserving 7942 MB for main workspace.
+--vcf: GCRF_newhead-temporary.bed + GCRF_newhead-temporary.bim +
+GCRF_newhead-temporary.fam written.
+Error: .bim file has a split chromosome.  Use --make-bed by itself to
+remedy this.
+```
+
+So I tried sorting the vcf file.
+
+```{}
+(bioinf) [ericacnr@colostate.edu@login12 impute]$ bcftools sort GCRF_merged_imputed4.1_newhead.vcf.gz > GCRF_merged_imputed4.1_newhead.sort.vcf
+Writing to /tmp/bcftools.zBleDc
+Merging 7 temporary files
+Cleaning
+Done
+```
+
+This sorting works! So doing the bcftools norm again on the sorted file.
+
+```{}
+(GWAS) [ericacnr@colostate.edu@login12 impute]$ conda activate bioinf
+(bioinf) [ericacnr@colostate.edu@login12 impute]$ bcftools norm -d none -f ../../Reference/leucosticte_australis_final_assembly.fasta  GCRF_merged_imputed4.1_newhead.sort.vcf > GCRF_merged_impute4.1.sort.rm_dup.vcf.gz
+Lines   total/split/joined/realigned/skipped:	9943613/0/0/0/0
+(bioinf) [ericacnr@colostate.edu@login12 impute]$ cat GCRF_merged_impute4.1.sort.rm_dup.vcf.gz | grep -v "^#" |wc -l
+7942760
+(bioinf) [ericacnr@colostate.edu@login12 impute]$ mv GCRF_merged_impute4.1.sort.rm_dup.vcf.gz GCRF_merged_impute4.1.sort.rm_dup.vcf
+```
+
+## 3. PLINK to make .ped and .map files
+
+This worked and the number of SNPs are replaced. I renamed it because I messed that up. Now trying plink again!
+
+```{}
+(bioinf) [ericacnr@colostate.edu@login12 impute]$ conda activate GWAS
+(GWAS) [ericacnr@colostate.edu@login12 impute]$ plink --vcf GCRF_merged_impute4.1.sort.rm_dup.vcf --aec --recode --out ../input_files/GCRF_base_file
+PLINK v1.90b6.21 64-bit (19 Oct 2020)          www.cog-genomics.org/plink/1.9/
+(C) 2005-2020 Shaun Purcell, Christopher Chang   GNU General Public License v3
+Logging to ../input_files/GCRF_base_file.log.
+Options in effect:
+  --allow-extra-chr
+  --out ../input_files/GCRF_base_file
+  --recode
+  --vcf GCRF_merged_impute4.1.sort.rm_dup.vcf
+
+15884 MB RAM detected; reserving 7942 MB for main workspace.
+--vcf: ../input_files/GCRF_base_file-temporary.bed +
+../input_files/GCRF_base_file-temporary.bim +
+../input_files/GCRF_base_file-temporary.fam written.
+7942760 variants loaded from .bim file.
+89 people (0 males, 0 females, 89 ambiguous) loaded from .fam.
+Ambiguous sex IDs written to ../input_files/GCRF_base_file.nosex .
+Using 1 thread (no multithreaded calculations invoked).
+Before main variant filters, 89 founders and 0 nonfounders present.
+Calculating allele frequencies... done.
+7942760 variants and 89 people pass filters and QC.
+Note: No phenotypes present.
+--recode ped to ../input_files/GCRF_base_file.ped +
+../input_files/GCRF_base_file.map ... done.
+```
+
+## 4. Fixing the .map files and the .ped files to have morphology
+
+Fixing the .map file so that the SNP name is the scaffold and the position together. This file shows the chromosome and SNP location for each SNP.
+
+```{}
+(GWAS) [ericacnr@colostate.edu@login12 impute]$ cd ../input_files/
+(GWAS) [ericacnr@colostate.edu@login12 input_files]$ cat GCRF_base_file.map | head
+Scaffold_1__1_contigs__length_151072562	.	0	91
+Scaffold_1__1_contigs__length_151072562	.	0	303
+Scaffold_1__1_contigs__length_151072562	.	0	323
+Scaffold_1__1_contigs__length_151072562	.	0	348
+Scaffold_1__1_contigs__length_151072562	.	0	460
+Scaffold_1__1_contigs__length_151072562	.	0	473
+Scaffold_1__1_contigs__length_151072562	.	0	520
+Scaffold_1__1_contigs__length_151072562	.	0	751
+Scaffold_1__1_contigs__length_151072562	.	0	821
+Scaffold_1__1_contigs__length_151072562	.	0	1271
+(GWAS) [ericacnr@colostate.edu@login12 input_files]$ cat GCRF_base_file.map | awk '{print$1"\t"$1"."$4"\t"$3"\t"$4}' > GCRF_base_file.map_loc.map
+(GWAS) [ericacnr@colostate.edu@login12 input_files]$ cat GCRF_base_file.map_loc.map | head
+Scaffold_1__1_contigs__length_151072562	Scaffold_1__1_contigs__length_151072562.91	0	91
+Scaffold_1__1_contigs__length_151072562	Scaffold_1__1_contigs__length_151072562.303	0	303
+Scaffold_1__1_contigs__length_151072562	Scaffold_1__1_contigs__length_151072562.323	0	323
+Scaffold_1__1_contigs__length_151072562	Scaffold_1__1_contigs__length_151072562.348	0	348
+Scaffold_1__1_contigs__length_151072562	Scaffold_1__1_contigs__length_151072562.460	0	460
+Scaffold_1__1_contigs__length_151072562	Scaffold_1__1_contigs__length_151072562.473	0	473
+Scaffold_1__1_contigs__length_151072562	Scaffold_1__1_contigs__length_151072562.520	0	520
+Scaffold_1__1_contigs__length_151072562	Scaffold_1__1_contigs__length_151072562.751	0	751
+Scaffold_1__1_contigs__length_151072562	Scaffold_1__1_contigs__length_151072562.821	0	821
+Scaffold_1__1_contigs__length_151072562	Scaffold_1__1_contigs__length_151072562.1271	0	1271
+```
+
+The .ped file is the FID, IID, (other stuff 3-5), phenotype data, genotypes. I need to replace the first column in the .ped file to have the FID be the location. So the plan for this is to make a separate .txt file in R with the location and the sample names, then add it to the original ped file to replace the first two columns.
+
+According to Marina: "In your ped file, this means the first columns should be all "1"s, the second column should be your sample ID, then 3 columns which are usually "0"s, and finally, the 6th column is your phenotype column"
+
+I'm going to keep the FID as WMNT=1 and PIPA=2 so that there's some distinction, and see if this will run in GEMMA.
+
+First lets make the .txt file, we'll do that here.
+```{r}
+morpho <- read.csv("~/Desktop/GCRF/R data/GCRF_morphology.csv")
+morpho <- morpho[1:189,]
+locID <- as.data.frame(cbind(morpho$site, morpho$BGP_ID))
+colnames(locID) <- c("site", "BGP_ID")
+
+#getting the correct sample IDs
+locID <- distinct(locID)
+locID <- locID[order(locID$BGP_ID), ]
+rownames(locID) <- NULL
+locID <- locID[38:128,]
+rownames(locID) <- NULL
+locID <- locID[c(-15,-18),]
+
+#fixing the site data to be numerical
+locID <- replace(locID, locID == "WMNT", 1)
+locID <- replace(locID, locID == "PIPA", 2)
+
+write.table(locID, file="locID_num.txt", row.names=F, col.names=F)
+```
+
+Alright, I moved the .txt file into the folder with the other input files. Now I'm going to replace the first column of the .ped file with the first column of the locID_num.txt. file. I have to remove the " characters first though...
+
+```{}
+#removing the " from the file
+sed 's/"//g' locID_num.txt > locID_num_clean.txt
+#adding the locID to the .ped file as the first two columns
+paste locID_num_clean.txt GCRF_base_file.ped > GCRF_intermed.ped
+#reformatting the file so it's the first two columns from the locID file and the rest are from the original file, this takes a while
+cat GCRF_intermed.ped | awk 'BEGIN {OFS="\t"} {printf "%s\t%s\t%s", $1, $2, $5; for (i=6; i<=15885534; i++) printf "\t%s", $i; print ""}' > GCRF_base_file_fin.ped
+#checking that it went correctly (-S command keeps it from wrapping, so it can show the full line without going crazy and feeding out all the genotypes onto the screen)
+less -S GCRF_base_file_fin.ped
+#checking that it has the correct number of columns, looks good!
+awk '{print NF; exit}' GCRF_base_file_fin.ped
+>15885526
+```
+
+## 5. PLINK for .bim .bam .fam files
+Okay so now that the .map file and .ped file are (hopefully) correctly formatted, I'm going to try and run plink to get the files I need to input into the GEMMA program.
+
+So I'm going to use these base files without the morphology to make base .bim .bam and .fam files. I think I can then edit the .fam file to have the phenotypes information since I haven't been able to get plink's --pheno options to work in the past.
+
+```{}
+plink --ped GCRF_base_file_fin.ped --map GCRF_base_file_loc.map --out GCRF_base_file --make-bed --aec --allow-no-sex
+```
+Awesome, now I have these files:
+
+GCRF_base_file.bed #can't view this as it's the binary file
+GCRF_base_file.bim #this has the correct SNP ID's
+GCRF_base_file.fam #this has all the info and -9 values for the morphology, so this is what I'll fiddle with...
+
+Okay so I'm going to take these base files and the GCRF_bill_morpho.txt and copy them into the bill_morpho folder so I can work with them within there. I'm going to go ahead and delete everything that was in the folder as I'm starting from scratch. 
+
+I'm going to make a GCRF_bill_morpho.txt file that is formatted just like the .fam file but will all the morphology, then I'm going to rename it and see if I can just use that for the mlmm.
+
+Adding all the morphology I want for the beak stuff into one file to use as a .fam files. 
+
+```{r}
+morpho <- read.csv("~/Desktop/GCRF/R data/GCRF_morphology.csv")
+#getting rid of the empty cells that came from excel
+morpho <- morpho[1:189,]
+
+bill_morpho <- as.data.frame(cbind(morpho$BGP_ID, morpho$nare_length, morpho$beak_depth, morpho$beak_width, morpho$culmen_end_length))
+bill_morpho <- bill_morpho[order(bill_morpho$V1), ]
+rownames(bill_morpho) <- NULL
+bill_morpho <- bill_morpho[48:145,]
+rownames(bill_morpho) <- NULL
+bill_morpho <- bill_morpho[c(-15,-18,-20,-36,-43,-59,-69,-70,-76,-89,-90),]
+rownames(bill_morpho) <- NULL
+#missing phenotype data but have genetic data, will impute with GEMMA
+bill_morpho <- rbind(bill_morpho, c("23N00557", NA, NA, NA, NA), c("23N00459", NA, NA, NA, NA))
+bill_morpho <- bill_morpho[order(bill_morpho$V1), ]
+rownames(bill_morpho) <- NULL
+#Now I've got the right number of rows! Next, replacing the "-" with NAs as this will export best
+bill_morpho <- replace(bill_morpho, bill_morpho == "-", NA)
+bill_morpho <- replace(bill_morpho, bill_morpho == "", NA)
+
+FID_file <- read.table("~/Desktop/GCRF/GenomicPipeline/locID_num.txt", header = FALSE, sep = " ", na.strings = c("", "NA"))
+#adding columns for the empty values that are normally in the .ped file
+FID_file$V3 <- 0
+FID_file$V4 <- 0
+FID_file$V5 <- 0
+#adding the bill_length as the 6th row, skipping tarsus for now
+bill_ped_file <- cbind(FID_file[,1:5], bill_morpho[,2:5])
+write.table(bill_ped_file, file="~/Desktop/GCRF/GenomicPipeline/GWAS input/GCRF_bill_morpho.txt", row.names=F, col.names=F)
+```
+
+Moving that file over onto the cluster and cleaning it up. Then renamed it to GCRF_bill_morpho.fam
+
+```{}
+sed 's/"//g' GCRF_bill_morpho.txt > GCRF_bill_morpho_clean.txt
+```
+
+# RUNNING THE GWAS
+## 6. Relatedness Matrix
+
+First step is to create a relatedness matrix that can be used for all of the following GWAS analyses.
+
+```{}
+/projects/ericacnr@colostate.edu/GEMMA/bin/gemma -bfile GCRF_base_file -gk 1 -o GCRF.relate > gemma.relate.err 2> gemma.relate.out
+```
+
+Okay so that kept failing because:
+ERROR: Enforce failed for number of analyzed individuals equals 0. in src/param.cpp at line 2075 in ProcessCvtPhen
+
+Seems like this might be because the phenotype file doesn't have anything.
+
+So I just copies the relatedness matrix from the bill_length stuff from earlier.
+
+## 7. MLMM models
+
+So Marina got eigen values first and included those in the mlmm so I'm going to do that also.
+
+```{}
+/projects/ericacnr@colostate.edu/GEMMA/bin/gemma -bfile GCRF_bill_morpho \
+	-k output/GCRF_relate.cXX.txt \
+	-eigen -o GCRF_bill_morpho_eigen
+```
+
+Easy enough. I now have:
+GCRF_bill_morpho_eigen.eigenD.txt
+GCRF_bill_morpho_eigen.eigenU.txt
+GCRF_bill_morpho_eigen.log.txt
+
+Okay so now the files are ready to run a mlmm but there are missing phenotypes. I'm going to just run it with those missing phenotypes just being ignored.
+
+```{}
+/projects/ericacnr@colostate.edu/GEMMA/bin/gemma -bfile GCRF_bill_morpho -k output/GCRF_relate.cXX.txt -d output/GCRF_bill_morpho.eigen.eigenD.txt -u output/GCRF_bill_morpho.eigen.eigenU.txt -lmm 1 -o GCRF_bill_morpho.mlmm -n 1 2 3 4 -w 500000 -s 5000000
+```
+
+Got this error:
+GSL ERROR: matrix is singular in lu.c at line 449 errno 1
+
+Which might be due to one of the variables being highly correlated with another, probably beak width and beak length. So dropping beak width as a variable. Putting this into a script so it had enough memory and stuff.
+
+```{}
+/projects/ericacnr@colostate.edu/GEMMA/bin/gemma -bfile GCRF_bill_morpho -k output/GCRF_relate.cXX.txt -d output/GCRF_bill_morpho.eigen.eigenD.txt -u output/GCRF_bill_morpho.eigen.eigenU.txt -lmm 1 -o GCRF_bill_morpho.mlmm -n 1 3 4 -w 500000 -s 5000000
+```
+
+This has been running for 20 hours now, I only allotted 24 hours total so hopefully it completes soon, but this is the farthest I've gotten with this!
+
+#########################################
+I'm going to prep the feather morphology stuff. I've already make a data frame with the residuals after a body size correction and that's what I'll put into the GWAS. So I'm going to fix that file so that it can be used at the .fam file in the GWAS.
+
+```{r}
+FID_file <- read.table("~/Desktop/GCRF/GenomicPipeline/locID_num.txt", header = FALSE, sep = " ", na.strings = c("", "NA"))
+#adding columns for the empty values that are normally in the .ped file
+FID_file$V3 <- 0
+FID_file$V4 <- 0
+FID_file$V5 <- 0
+colnames(FID_file) <- c("FID", "ID", "V3", "V4", "V5")
+
+feather_res_gwas <- read.table("~/Desktop/GCRF/GenomicPipeline/GWAS input/feather_residuals.txt", header=T, sep=" ")
+feather_res_gwas <- data.frame(FID_file[,1:5], feather_res_gwas)
+write.table(feather_res_gwas, file="~/Desktop/GCRF/GenomicPipeline/GWAS input/feather_residuals_loc.txt", row.names=F, col.names=F)
+missing_ids <- setdiff(feather_res_gwas$ID, FID_file$ID)
+```
+
+```{}
+sed 's/"//g' feather_residuals_loc.txt > feather_residuals_clean.txt
+
+mv GCRF_base_file.bed GCRF_feather.bed
+mv GCRF_base_file.bim GCRF_feather.bim
+mv feather_residuals_clean.txt GCRF_feather.fam
+```
+
+```{}
+/projects/ericacnr@colostate.edu/GEMMA/bin/gemma -bfile GCRF_feather \
+	-k output/GCRF_relate.cXX.txt \
+	-eigen -o GCRF_feather_eigen
+```
+
+GCRF_feather_eigen.eigenD.txt 
+GCRF_feather_eigen.eigenU.txt
+GCRF_feather_eigen.log.txt
+
+Testing this outside of a script to make sure it runs. Looks like it didn't throw the correlation error, so putting it into a script and letting it cook!
+```{}
+/projects/ericacnr@colostate.edu/GEMMA/bin/gemma -bfile GCRF_feather -k\
+output/GCRF_relate.cXX.txt -d output/GCRF_feather_eigen.eigenD.txt \
+-u output/GCRF_feather_eigen.eigenU.txt -lmm 1 \
+-o GCRF_bill_morpho.mlmm -n 1 2 3 4 5 -w 500000 -s 5000000
+```
+Gosh, seems like this is running too! I'm just going to adjust the time to a day and a half...
+
+So that ran but after processing it said I have ~257,000 significant SNPs, so I don't trust it at all. So back to lmm and bslmm models for individuals phenotypes I guess, what a bummer.
+
+
+
+## 8. BSLMM and LMM
+```{r, message=F, LIBRARIES}
+library(MASS)
+library(caret)
+library(ggplot2)
+library(dplyr)
+library(FactoMineR)
+library(factoextra)
+library(corrplot)
+library(ggcorrplot)
+library(rstatix)
+library(dplyr)
+```
+### Feather PCA and BSLMM
+What I can do for the feather stuff at least is to run a PCA with the feather morphology and then use the first PC as the phenotype in the GWAS, that was it's one variable that is still accounting for all of the feather morphology...
+
+This whole first part is just to get the site ID information arranged correctly so I can plug it into the feather data more easily. Just ripped from the GCRF_lms.rmd file.
+```{r}
+morpho <- read.csv("~/Desktop/GCRF/R data/GCRF_morphology.csv")
+morpho <- morpho[1:189,]
+
+morpho_num <- as.data.frame(cbind(as.numeric(morpho$wing), as.numeric(morpho$tarsus), as.numeric(morpho$weight), as.numeric(morpho$tail_length), as.numeric(morpho$nare_length), as.numeric(morpho$bristle_length), as.numeric(morpho$beak_depth), as.numeric(morpho$beak_width), as.numeric(morpho$nare_end_length), as.numeric(morpho$culmen_end_length)))
+
+colnames(morpho_num) <- c("wing", "tarsus", "weight", "tail_length", "nare_length", "bristle_length", "beak_depth", "beak_width", "nare_end_length", "culmen_end_length")
+morpho2 <- as.data.frame(cbind(morpho$BGP_ID, as.factor(morpho$site),morpho_num))
+colnames(morpho2) <- c("BGP_ID", "site", "wing", "tarsus", "weight", "tail_length", "nare_length", "bristle_length", "beak_depth", "beak_width", "nare_end_length", "culmen_end_length")
+
+morpho_avg <- morpho2 %>% group_by(BGP_ID, site) %>% reframe(wing=mean(wing), tarsus=mean(tarsus), weight=mean(weight), tail_length=mean(tail_length), nare_length=mean(nare_length), bristle_length=mean(bristle_length), beak_depth=(beak_depth), beak_width=mean(beak_width), nare_end_length=mean(nare_end_length), culmen_end_length=mean(culmen_end_length))
+```
+```{r}
+feather <- read.csv("~/Desktop/GCRF/R data/GCRF_feather_morpho.csv")
+site <- data.frame(morpho_avg$site, morpho_avg$BGP_ID, morpho_avg$tarsus)
+colnames(site) <- c("site", "ID", "tarsus")
+
+feather_avg <- feather %>% group_by(ID) %>% summarize(pen_length=mean(Penn_length), pen_num=mean(Penn_number), plum_length=mean(Plum_length), plum_number=mean(Plum_number), nodes=mean(Nodes))
+
+feather_avg <- merge(feather_avg, site, by="ID")
+#reordering the columns so they're tidy
+feather_avg <- data.frame(feather_avg$ID, feather_avg$site, feather_avg$pen_length, feather_avg$pen_num, feather_avg$plum_length, feather_avg$plum_number, feather_avg$nodes, feather_avg$tarsus)
+colnames(feather_avg) <- c("BGP_ID", "site", "pen_length", "pen_num", "plum_length", "plum_number", "nodes", "tarsus")
+```
+
+
+```{r}
+#feather_avg <- feather_avg[!duplicated(feather_avg$ID),]
+
+#removing and NAs, only losing 3 individuals
+feather_avg <- na.omit(feather_avg)
+colSums(is.na(feather_avg))
+#including the tarsus variable to maybe account for body size differences?
+morpho_num <- feather_avg[,3:8]
+
+corr_m <- cor(morpho_num)
+ggcorrplot(corr_m)
+#none of them have a value higher than |.53|, so I'm going to say that any correlation is fine
+#actually going to remove the tarsus because its so weakly correlated with everything...
+morpho <- feather_avg[,3:7]
+```
+
+```{r}
+feather_avg #the df with individuals (character) and groups (factor)
+morpho #the df with just the variables
+#nothing has been normalized
+
+#taking the active variable, ie individuals and the measurements that go into the PCA
+morpho.active <- feather_avg[,c(1, 3:7)]
+
+#now need to standardize the variables, but using the PCA function that's already done so don't need to do it prior to running the PCA in this case, otherwise use scale()... x-mean(x)/sd(x)
+#need to remove the column for individual though...
+morpho.active.1 <- morpho.active[,-1]
+morpho.pca <- PCA(morpho.active.1,  scale.unit=T, graph=F)
+
+eig.val <- get_eig(morpho.pca)
+eig.val
+fviz_eig(morpho.pca, addlabels = T)
+#this is awesome, the first PC explains over half the variation which suggests it'll be a representative variable to run in the GWAS
+```
+
+```{r}
+var <- get_pca_var(morpho.pca)
+head(var$coord)
+
+```
+
+```{r}
+
+fviz_pca_var(morpho.pca, col.var="black")
+fviz_cos2(morpho.pca, choice="var", axes=1:4)
+library("corrplot")
+corrplot(var$contrib, is.corr=F)
+#so I'm intrepreting this as PC1 representing the structure overall, as opposed to one variable more strongly than any others
+```
+
+```{r}
+#fviz_pca_ind(morpho.pca)
+#fviz_pca_ind(morpho.pca, col.ind = "cos2", 
+#             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+#             repel = TRUE # Avoid text overlapping (slow if many points)
+#             )
+```
+
+```{r}
+fviz_pca_ind(morpho.pca,
+             geom.ind = "point", # show points only (nbut not "text")
+             col.ind = feather_avg$site, # color by groups
+             palette = c("#00AFBB", "#E7B800"),
+             addEllipses = TRUE, # Concentration ellipses
+             legend.title = "Groups",
+             )
+ind <- morpho.pca$ind
+coord <- as.data.frame(ind$coord)
+PC1 <- data.frame(feather_avg$BGP_ID, coord$Dim.1)
+colnames(PC1) <- c("BGP_ID", "PC1")
+
+```
+
+Awesome, so now that I have that set up, I can add the missing BGP_ID's and there are some random duplicates...
+
+```{r}
+PC1 <- PC1[c(-17, -31, -47, -60, -73, -74),]
+feather_PC1 <- rbind(PC1,
+                     c("23N00444", NA),
+                     c("23N00447", NA), 
+                     c("23N00448", NA), 
+                     c("23N00450", NA), 
+                     c("23N00451", NA), 
+                     c("23N00452", NA),
+                     c("23N00454", NA), 
+                     c("23N00456", NA), 
+                     c("23N00457", NA), 
+                     c("23N00459", NA), 
+                     c("23N00462", NA), 
+                     c("23N00557", NA))
+#missing phenotype data but have genetic data, will impute with GEMMA
+feather_PC1 <- feather_PC1[order(feather_PC1$BGP_ID), ]
+rownames(feather_PC1) <- NULL
+```
+
+```{r}
+
+FID_file <- read.table("~/Desktop/GCRF/GenomicPipeline/locID_num.txt", header = FALSE, sep = " ", na.strings = c("", "NA"))
+#adding columns for the empty values that are normally in the .ped file
+FID_file$V3 <- 0
+FID_file$V4 <- 0
+FID_file$V5 <- 0
+#adding the bill_length as the 6th row, skipping tarsus for now
+feather.PC_ped_file <- cbind(FID_file[,1:5], feather_PC1[,2])
+write.table(feather.PC_ped_file, file="~/Desktop/GCRF/GenomicPipeline/GWAS input/GCRF_feather_PC.txt", row.names=F, col.names=F)
+```
+
+```{}
+sed 's/"//g' GCRF_feather_PC.txt > GCRF_feather_PC_clean.txt
+paste GCRF_feather_PC_clean.txt ../GCRF_genotypes.ped > GCRF_feather_PC.ped
+
+plink --ped GCRF_feather_PC.ped --map GCRF_base_file_loc.map --out GCRF_feather_PC --make-bed --aec --allow-no-sex 
+```
+
+```{}
+/projects/ericacnr@colostate.edu/GEMMA/bin/gemma -bfile GCRF_feather_PC \
+  -gk 1 \ 
+	-o GCRF_relate_PC.cXX.txt \
+```
+
+```{}
+#in a script
+/projects/ericacnr@colostate.edu/GEMMA/bin/gemma -bfile GCRF_feather_PC \
+-k output/GCRF_relate_PC.cXX.txt -bslmm 1 -o GCRF_feather_PC.bslmm \
+-w 500000 -s 5000000
+
+```
+GCRF_feather_PC.bslmm.gamma.txt
+GCRF_feather_PC.bslmm.param.txt
+GCRF_feather_PC.bslmm.hyp.txt
+GCRF_feather_PC.bslmm.log.txt
+
+Processed this with GEMMA_bslmm_output_analysis_working.R and got at least two snps that flag as being important.
+
+
+######################################################################################################################################################
+
+First step is making files for every phenotypes...bleh. Lets do beak length, nare length, bristles... wing chord and all the feather morphology. The beak length stuff should already be set up, so let's use that same code to make the other ones.
+
+
+### Bill PCA and BSLMM
+Repeating the steps from the feather PCA but with the bill data.
+
+```{r}
+morpho <- read.csv("~/Desktop/GCRF/R data/GCRF_morphology.csv")
+morpho <- morpho[1:189,]
+
+morpho_num <- as.data.frame(cbind(as.numeric(morpho$nare_length), as.numeric(morpho$beak_depth), as.numeric(morpho$beak_width), as.numeric(morpho$culmen_end_length)))
+
+colnames(morpho_num) <- c("nare_length", "beak_depth", "beak_width", "culmen_end_length")
+morpho2 <- as.data.frame(cbind(morpho$BGP_ID, as.factor(morpho$site), morpho_num))
+colnames(morpho2) <- c("BGP_ID", "site", "nare_length", "beak_depth", "beak_width", "culmen_end_length")
+
+morpho_avg <- morpho2 %>% group_by(BGP_ID, site) %>% reframe(nare_length=mean(nare_length), beak_depth=(beak_depth), beak_width=mean(beak_width), culmen_end_length=mean(culmen_end_length))
+morpho_avg <- morpho_avg[48:145,]
+morpho_avg <- morpho_avg[c(-15,-18,-19,-43,-60,-70,-75,-88,-89),]
+```
+
+```{r}
+#feather_avg <- feather_avg[!duplicated(feather_avg$ID),]
+
+#removing and NAs, losing 14 individuals
+morpho_avg <- na.omit(morpho_avg)
+colSums(is.na(morpho_avg))
+morpho_num <- morpho_avg[,3:6]
+
+
+corr_m <- cor(morpho_num)
+ggcorrplot(corr_m)
+```
+
+```{r}
+morpho_avg #the df with individuals (character) and groups (factor)
+morpho_num #the df with just the variables
+#nothing has been normalized
+
+#taking the active variable, ie individuals and the measurements that go into the PCA
+morpho.active <- morpho_avg[,c(1, 3:6)]
+
+#now need to standardize the variables, but using the PCA function that's already done so don't need to do it prior to running the PCA in this case, otherwise use scale()... x-mean(x)/sd(x)
+#need to remove the column for individual though...
+morpho.active.1 <- morpho.active[,-1]
+morpho.pca <- PCA(morpho.active.1,  scale.unit=T, graph=F)
+
+eig.val <- get_eig(morpho.pca)
+eig.val
+fviz_eig(morpho.pca, addlabels = T)
+#this is awesome, the first PC explains over half the variation which suggests it'll be a representative variable to run in the GWAS
+```
+
+```{r}
+var <- get_pca_var(morpho.pca)
+head(var$coord)
+```
+
+```{r}
+fviz_pca_var(morpho.pca, col.var="black")
+fviz_cos2(morpho.pca, choice="var", axes=1:4)
+library("corrplot")
+corrplot(var$contrib, is.corr=F)
+#so I'm intrepreting this as PC1 representing the beak morphology overall, as opposed to one variable more strongly than any others
+```
+
+```{r}
+fviz_pca_ind(morpho.pca,
+             geom.ind = "point", # show points only (nbut not "text")
+             col.ind = morpho_avg$site, # color by groups
+             palette = c("#00AFBB", "#E7B800"),
+             addEllipses = TRUE, # Concentration ellipses
+             legend.title = "Groups",
+             )
+ind <- morpho.pca$ind
+coord <- as.data.frame(ind$coord)
+PC1 <- data.frame(morpho_avg$BGP_ID, coord$Dim.1)
+colnames(PC1) <- c("BGP_ID", "PC1")
+
+```
+
+Awesome, so now that I have that set up, I can add the missing BGP_ID's and there are some random duplicates...
+
+```{r}
+bill_PC1 <- rbind(PC1,
+                  c("23N00437", NA),
+                  c("23N00444", NA), 
+                  c("23N00448", NA), 
+                  c("23N00460", NA), 
+                  c("23N00464", NA), 
+                  c("23N00467", NA),
+                  c("23N00475", NA), 
+                  c("23N00479", NA), 
+                  c("23N00480", NA), 
+                  c("23N00485", NA), 
+                  c("23N00488", NA),
+                  c("23N00489", NA), 
+                  c("23N00490", NA),
+                  c("23N00491", NA))
+#missing phenotype data but have genetic data, will impute with GEMMA
+bill_PC1 <- bill_PC1[order(bill_PC1$BGP_ID), ]
+rownames(bill_PC1) <- NULL
+```
+
+```{r}
+FID_file <- read.table("~/Desktop/GCRF/GenomicPipeline/locID_num.txt", header = FALSE, sep = " ", na.strings = c("", "NA"))
+#adding columns for the empty values that are normally in the .ped file
+FID_file$V3 <- 0
+FID_file$V4 <- 0
+FID_file$V5 <- 0
+#adding the bill_length as the 6th row, skipping tarsus for now
+bill.PC_ped_file <- cbind(FID_file[,1:5], bill_PC1[,2])
+write.table(bill.PC_ped_file, file="~/Desktop/GCRF/GenomicPipeline/GWAS input/GCRF_bill_PC.txt", row.names=F, col.names=F)
+```
+
+Moving it over to the cluster...
+
+```{}
+sed 's/"//g' GCRF_bill_PC.txt > GCRF_bill_PC_clean.txt
+paste GCRF_bill_PC_clean.txt ../GCRF_genotypes.ped > GCRF_bill_PC.ped
+
+plink --ped GCRF_bill_PC.ped --map GCRF_base_file_loc.map --out GCRF_bill_PC --make-bed --aec --allow-no-sex 
+```
+
+```{}
+/projects/ericacnr@colostate.edu/GEMMA/bin/gemma -bfile GCRF_bill_PC -gk 1 -o GCRF_relate_PC.cXX.txt
+```
+
+```{}
+#in a script
+/projects/ericacnr@colostate.edu/GEMMA/bin/gemma -bfile GCRF_bill_PC \
+-k output/GCRF_relate_PC.cXX.txt -bslmm 1 -o GCRF_bill_PC.bslmm \
+-w 500000 -s 5000000
+
+```
+GCRF_feather_PC.bslmm.gamma.txt
+GCRF_feather_PC.bslmm.param.txt
+GCRF_feather_PC.bslmm.hyp.txt
+GCRF_feather_PC.bslmm.log.txt
+
+
+
+## nare length
+
+
+Running this in a script so it doesn't time out or run out of space. Using one that Marina wrote, again not sure about the -w and -s numbers...
+
+
+```{}
+module load gcc/10.3
+module load openmpi
+conda activate GWAS2
+
+/projects/ericacnr@colostate.edu/GEMMA/bin/gemma -bfile GCRF_bill_morpho \
+-k output/GCRF_relate.cXX.txt -bslmm 1 -o GCRF_bill_morpho_bslmm \
+-w 500000 -s 5000000
+```
+
+Okay so that seems to have worked! I now have:
+GCRF_bill_morpho_bslmm.bv.txt     
+GCRF_bill_morpho_bslmm.hyp.txt  
+GCRF_bill_morpho_bslmm.param.txt
+GCRF_bill_morpho_bslmm.gamma.txt  
+GCRF_bill_morpho_bslmm.log.txt
+
+
+Now I'm going to run each individual feather trait in the bslmm, and do a PCA for bill morphology and run those traits through bslmm too. Oh boy! Might try a lmm on the feather PCA too just to see if I get anything.
+
+
+
+
+
+
+
+
+
+########################################################################################################################
+
+So from this I should be able to predict the missing values.
+
+```{}
+module load gcc/10.3
+module load openmpi
+conda activate GWAS2
+
+/projects/ericacnr@colostate.edu/GEMMA/bin/gemma -bfile GCRF_bill_morpho -epm output/GCRF_bill_morpho_bslmm.param.txt -emu output/GCRF_bill_morpho_bslmm.log.txt -ebv output/GCRF_bill_morpho_bslmm.bv.txt -k output/GCRF_bill_length.relate.cXX.txt -predict 1 -o GCRF_bill_morpho_bslmm
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# GETTING ALLELE FREQUENCIES FOR THE FLAGGED SNPS
+So with filtering using the bslmm output for feathers and bills, I was able to identify some relevant SNPS.
+For the bill morphology: (above a .1 threshold for PIP values, per Chaves 2016).
+chr	rs	ps	n_miss	alpha	beta	gamma	eff
+Scaffold_2__1_contigs__length_114774641	Scaffold_2__1_contigs__length_114774641.41203916	41203916	0	-6.108376e-06	-0.8424626	0.114384	0.0963642420384
+
+For the feather morphology:
+chr	rs	ps	n_miss	alpha	beta	gamma	eff
+Scaffold_28__1_contigs__length_11240829	Scaffold_28__1_contigs__length_11240829.4798538	4798538	0	-3.014029e-06	-1.487668	0.389188	0.578982533584
+Scaffold_1__1_contigs__length_151072562	Scaffold_1__1_contigs__length_151072562.91081692	91081692	0	-2.156909e-06	-1.643631	0.25956	0.42662086236
+Scaffold_18__1_contigs__length_25274884	Scaffold_18__1_contigs__length_25274884.2074884	2074884	0	2.328089e-06	0.9979339	0.23866	0.238166904574
+
+So the goal now is to use plink to pull out these specific snps, get recode the alleles to 0 (homozygous reference), 1 (heterozygous), and 2 (homozygous alternative) for each individual. The idea then is to run a regression with those categorical variables again the continuous bill of feather PC values and see if there's a relationship.
+
+So first, we're going to be pull the SNP info from the vcf that was put into the GWAS, so the imputed file: GCRF_merged_impute4.1.sort.rm_dup.vcf. PLINK should be able to pull out a SNP based on it's name, but because the SNPS are namemd after the scaffold and then given a position, I'm not sure how to extract the one I'm looking for. 
+
+This is how the SNP is stored in the vcf file:
+Scaffold_292__1_contigs__length_11690	8856	.	A	G	.	PASS	.	GT	1|1	0|0	0|0	0|0	0|1	0|1	0|0	1|1	1|1	0|0	0|0	0|0	0|0	0|0	0|0	0|0	0|0	0|0	0|0	0|0	0|0	0|1	0|1	1|1	0|0	0|1	0|0	1|1	0|1	0|0	1|1	0|1	1|1	0|0	0|0	0|0	0|1	0|0	0|0	0|1	0|0	0|1	0|0	0|0	0|0	0|0	0|0	0|1	0|0	1|1	0|0	0|0	0|1	0|0	0|0	0|0	0|1	0|1	0|0	0|0	0|0	1|1	0|0	0|1	0|0	1|1	1|1	0|0	0|0	0|0	0|0	1|1	0|0	0|0	0|0	0|0	1|1	0|0	0|0	0|1	0|0	0|0	0|0	0|0	0|0	0|0	0|0	0|0	0|0
+
+## Using PLINK to extract the values
+So the names are all there, just gotta figure out the right command for plink...
+
+We'll start with code the CH helped me with. We'll start with the bill SNP.
+
+```{}
+conda activate GWAS2
+plink --vcf GCRF_merged_impute4.1.sort.rm_dup.vcf --out Scaffold_2__1_contigs__length_114774641.41203916.bill --aec --recodeA --snp Scaffold_2__1_contigs__length_114774641.41203916
+```
+
+As I expected, it couldn't fine it. So I'm going to try and use another approach...
+
+
+```{}
+plink --vcf ../impute/GCRF_merged_impute4.1.sort.rm_dup.vcf --aec --recode --out allele_freq
+
+cat allele_freq.map | awk '{print$1"\t"$1"."$4"\t"$3"\t"$4}' > allele_freq_loc.map
+mv allele_freq_loc.map allele_freq.map
+
+plink --ped allele_freq.ped --map allele_freq.map --out allele_freq --make-bed --aec --allow-no-sex
+
+plink --bfile allele_freq --snp Scaffold_2__1_contigs__length_114774641.41203916 --aec --recodeA --out Scaffold_2__1_contigs__length_114774641.41203916.bill
+```
+
+That worked!! I now have a .fam file that has the info on the genotype! So I can import that here, merge it with the phenotype info and there ya go. Sick. So I'm just gonna do that again real quick with the feather SNPs...
+
+```{}
+plink --bfile allele_freq --snp Scaffold_28__1_contigs__length_11240829.4798538 --aec --recodeA --out Scaffold_28__1_contigs__length_11240829.4798538.feather
+
+plink --bfile allele_freq --snp Scaffold_1__1_contigs__length_151072562.91081692 --aec --recodeA --out Scaffold_1__1_contigs__length_151072562.91081692.feather
+
+plink --bfile allele_freq --snp Scaffold_18__1_contigs__length_25274884.2074884 --aec --recodeA --out Scaffold_18__1_contigs__length_25274884.2074884.feather
+
+```
+
+## Importing data into R
+
+Moving back into R after I moved the files over, going to organizing everything here.
+```{r}
+feather.PC_ped_file
+colnames(feather.PC_ped_file) <- c("FID", "IID", "PAT", "MAT", "SEX", "PHENOTYPE")
+bill.PC_ped_file
+colnames(bill.PC_ped_file) <- c("FID", "IID", "PAT", "MAT", "SEX", "PHENOTYPE")
+
+
+S1.1.91081692.feather <- read.table("~/Desktop/GCRF/GenomicPipeline/data/allele_freq/Scaffold_1__1_contigs__length_151072562.91081692.feather.raw", sep = " ", header = T)
+S1.1.91081692.feather <- data.frame(feather.PC_ped_file, S1.1.91081692.feather[,7])
+colnames(S1.1.91081692.feather) <- c("FID", "IID", "PAT", "MAT", "SEX", "PHENOTYPE", "GENOTYPE")
+
+S18.1.2074884.feather <- read.table("~/Desktop/GCRF/GenomicPipeline/data/allele_freq/Scaffold_18__1_contigs__length_25274884.2074884.feather.raw", sep = " ", header = T)
+S18.1.2074884.feather <- data.frame(feather.PC_ped_file, S18.1.2074884.feather[,7])
+colnames(S18.1.2074884.feather) <- c("FID", "IID", "PAT", "MAT", "SEX", "PHENOTYPE", "GENOTYPE")
+
+S28.1.4798539.feather <- read.table("~/Desktop/GCRF/GenomicPipeline/data/allele_freq/Scaffold_28__1_contigs__length_11240829.4798538.feather.raw", sep = " ", header = T)
+S28.1.4798539.feather <- data.frame(feather.PC_ped_file, S28.1.4798539.feather[,7])
+colnames(S28.1.4798539.feather) <- c("FID", "IID", "PAT", "MAT", "SEX", "PHENOTYPE", "GENOTYPE")
+
+S2.1.41203916.bill <- read.table("~/Desktop/GCRF/GenomicPipeline/data/allele_freq/Scaffold_2__1_contigs__length_114774641.41203916.bill.raw", sep = " ", header = T)
+S2.1.41203916.bill <- data.frame(bill.PC_ped_file, S2.1.41203916.bill[,7])
+colnames(S2.1.41203916.bill) <- c("FID", "IID", "PAT", "MAT", "SEX", "PHENOTYPE", "GENOTYPE")
+
+```
+
+## Running and plotting linear regressions
+
+Going to try running these in a linear regression, there are some NA values that might throw errors...
+
+```{r, S1.1.91081692}
+library(ggplot2)
+S1.feather <- lm(PHENOTYPE~GENOTYPE, data=S1.1.91081692.feather)
+summary(S1.feather)
+#p=5.19e-06!!!
+S1.1.91081692.feather.no.na <- na.omit(S1.1.91081692.feather)
+
+S1.feather.results <- data.frame(FID=as.factor(S1.1.91081692.feather.no.na$FID), GENOTYPE = as.numeric(S1.1.91081692.feather.no.na$GENOTYPE), PHENOTYPE = as.numeric(S1.1.91081692.feather.no.na$PHENOTYPE))
+S1.feather.results$predicted <- predict(S1.feather)
+
+y_breaks <- pretty(range(S1.feather.results$PHENOTYPE), n=5)
+x_breaks <- seq(min(S1.feather.results$GENOTYPE), max(S1.feather.results$GENOTYPE), length.out = 3)
+group_colors <- c("1" = "lightblue3", "2" = "tomato2")
+
+S1.91081692 <- ggplot(S1.feather.results, aes(x = GENOTYPE, y = PHENOTYPE, color = FID)) +
+  geom_point() +   # Add data points with color aesthetic
+  geom_smooth(method = "lm", se = TRUE, color = "grey3") +  # Add smoothed trend line with confidence intervals
+  labs(x = "Genotype", y = "Feather Morphology PC1") +  # Add axis labels
+  ggtitle("Feather Morphology vs SNP S1.91081692") +
+  scale_y_continuous(breaks = y_breaks) +
+  scale_x_continuous(breaks = x_breaks, labels = c("GG", "GA", "AA")) +
+  scale_color_manual(labels = c("WMNT", "PIPA"), values=group_colors) +  # Customize legend labels
+  theme_classic()
+
+ggsave("S1.91081692.png", plot=S1.91081692, path = "~/Desktop/GCRF/GenomicPipeline/data/allele_freq", width=9, height=7)
+```
+
+```{r, S18.1.2074884}
+S18.feather <- lm(PHENOTYPE~GENOTYPE, data=S18.1.2074884.feather)
+summary(S18.feather)
+#p=0.001585!!!
+S18.1.2074884.feather.no.na <- na.omit(S18.1.2074884.feather)
+
+S18.feather.results <- data.frame(FID=as.factor(S18.1.2074884.feather.no.na$FID), GENOTYPE = as.numeric(S18.1.2074884.feather.no.na$GENOTYPE), PHENOTYPE = as.numeric(S18.1.2074884.feather.no.na$PHENOTYPE))
+S18.feather.results$predicted <- predict(S18.feather)
+
+y_breaks <- pretty(range(S18.feather.results$PHENOTYPE), n=5)
+x_breaks <- seq(min(S18.feather.results$GENOTYPE), max(S18.feather.results$GENOTYPE), length.out = 3)
+group_colors <- c("1" = "lightblue3", "2" = "tomato2")
+
+S18.2074884 <- ggplot(S18.feather.results, aes(x = GENOTYPE, y = PHENOTYPE, color = FID)) +
+  geom_point() +   # Add data points with color aesthetic
+  geom_smooth(method = "lm", se = TRUE, color = "grey3") +  # Add smoothed trend line with confidence intervals
+  labs(x = "Genotype", y = "Feather Morphology PC1") +  # Add axis labels
+  ggtitle("Feather Morphology vs SNP S18.2074884") +
+  scale_y_continuous(breaks = y_breaks) +
+  scale_x_continuous(breaks = x_breaks, labels = c("CC", "CT", "TT")) +
+  scale_color_manual(labels = c("WMNT", "PIPA"), values=group_colors) +  # Customize legend labels
+  theme_classic()
+
+ggsave("S18.2074884.png", plot=S18.2074884, path = "~/Desktop/GCRF/GenomicPipeline/data/allele_freq", width=9, height=7)
+```
+
+```{r, S28.1.4798539}
+S28.feather <- lm(PHENOTYPE~GENOTYPE, data=S28.1.4798539.feather)
+summary(S28.feather)
+#p=9.482e-10!!!
+S28.1.4798539.feather.no.na <- na.omit(S28.1.4798539.feather)
+
+S28.feather.results <- data.frame(FID=as.factor(S28.1.4798539.feather.no.na$FID), GENOTYPE = as.numeric(S28.1.4798539.feather.no.na$GENOTYPE), PHENOTYPE = as.numeric(S28.1.4798539.feather.no.na$PHENOTYPE))
+S28.feather.results$predicted <- predict(S28.feather)
+
+y_breaks <- pretty(range(S28.feather.results$PHENOTYPE), n=5)
+x_breaks <- seq(min(S28.feather.results$GENOTYPE), max(S28.feather.results$GENOTYPE), length.out = 3)
+group_colors <- c("1" = "lightblue3", "2" = "tomato2")
+
+S28.4798539 <- ggplot(S28.feather.results, aes(x = GENOTYPE, y = PHENOTYPE, color = FID)) +
+  geom_point() +   # Add data points with color aesthetic
+  geom_smooth(method = "lm", se = TRUE, color = "grey3") +  # Add smoothed trend line with confidence intervals
+  labs(x = "Genotype", y = "Feather Morphology PC1") +  # Add axis labels
+  ggtitle("Feather Morphology vs SNP S28.4798539") +
+  scale_y_continuous(breaks = y_breaks) +
+  scale_x_continuous(breaks = x_breaks, labels = c("AA", "AG", "GG")) +
+  scale_color_manual(labels = c("WMNT", "PIPA"), values=group_colors) +  # Customize legend labels
+  theme_classic()
+
+ggsave("S28.4798539.png", plot=S28.4798539, path = "~/Desktop/GCRF/GenomicPipeline/data/allele_freq", width=9, height=7)
+```
+
+```{r, S2.1.41203916}
+S2.bill <- lm(PHENOTYPE~GENOTYPE, data=S2.1.41203916.bill)
+summary(S2.bill)
+#p=3.949e-09!!!
+S2.1.41203916.bill.no.na <- na.omit(S2.1.41203916.bill)
+
+S2.bill.results <- data.frame(FID=as.factor(S2.1.41203916.bill.no.na$FID), GENOTYPE = as.numeric(S2.1.41203916.bill.no.na$GENOTYPE), PHENOTYPE = as.numeric(S2.1.41203916.bill.no.na$PHENOTYPE))
+S2.bill.results$predicted <- predict(S2.bill)
+
+y_breaks <- pretty(range(S2.bill.results$PHENOTYPE), n=5)
+x_breaks <- seq(min(S2.bill.results$GENOTYPE), max(S2.bill.results$GENOTYPE), length.out = 3)
+group_colors <- c("1" = "lightblue3", "2" = "tomato2")
+
+S2.41203916 <- ggplot(S2.bill.results, aes(x = GENOTYPE, y = PHENOTYPE, color = FID)) +
+  geom_point() +   # Add data points with color aesthetic
+  geom_smooth(method = "lm", se = TRUE, color = "grey3") +  # Add smoothed trend line with confidence intervals
+  labs(x = "Genotype", y = "Bill Morphology PC1") +  # Add axis labels
+  ggtitle("Bill Morphology vs SNP S2.41203916") +
+  scale_y_continuous(breaks = y_breaks) +
+  scale_x_continuous(breaks = x_breaks, labels = c("TT", "TG", "GG")) +
+  scale_color_manual(labels = c("WMNT", "PIPA"), values=group_colors) +  # Customize legend labels
+  theme_classic()
+
+ggsave("S2.41203916.png", plot=S2.41203916, path = "~/Desktop/GCRF/GenomicPipeline/data/allele_freq", width=9, height=7)
+
+```

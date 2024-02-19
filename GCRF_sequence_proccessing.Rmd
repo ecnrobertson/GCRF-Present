@@ -1,0 +1,14 @@
+---
+title: "GCRF_sequence_processing"
+output: html_document
+date: "2024-02-08"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Going to be laying out the steps I took to process my raw fastq files.
+
+
+
