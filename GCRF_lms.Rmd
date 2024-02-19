@@ -1,0 +1,729 @@
+---
+title: "GCRF PCA"
+output: html_document
+date: "2023-12-12"
+---
+```{r include=TRUE}
+knitr::opts_chunk$set(include=TRUE)
+```
+
+```{r include=TRUE, echo=FALSE, message=FALSE}
+library(MASS)
+library(caret)
+library(ggplot2)
+library(dplyr)
+library(FactoMineR)
+library(factoextra)
+library(corrplot)
+library(ggcorrplot)
+library(rstatix)
+```
+
+# MORPHOLOGY PCA (Undivided)
+```{r}
+morpho <- read.csv("~/Desktop/GCRF/R data/GCRF_morphology.csv")
+morpho <- morpho[1:189,]
+
+morpho_num <- as.data.frame(cbind(as.numeric(morpho$wing), as.numeric(morpho$tarsus), as.numeric(morpho$weight), as.numeric(morpho$tail_length), as.numeric(morpho$nare_length), as.numeric(morpho$bristle_length), as.numeric(morpho$beak_depth), as.numeric(morpho$beak_width), as.numeric(morpho$nare_end_length), as.numeric(morpho$culmen_end_length)))
+
+colnames(morpho_num) <- c("wing", "tarsus", "weight", "tail_length", "nare_length", "bristle_length", "beak_depth", "beak_width", "nare_end_length", "culmen_end_length")
+morpho2 <- as.data.frame(cbind(morpho$BGP_ID, as.factor(morpho$site),morpho_num))
+colnames(morpho2) <- c("BGP_ID", "site", "wing", "tarsus", "weight", "tail_length", "nare_length", "bristle_length", "beak_depth", "beak_width", "nare_end_length", "culmen_end_length")
+
+morpho_avg <- morpho2 %>% group_by(BGP_ID, site) %>% reframe(wing=mean(wing), tarsus=mean(tarsus), weight=mean(weight), tail_length=mean(tail_length), nare_length=mean(nare_length), bristle_length=mean(bristle_length), beak_depth=(beak_depth), beak_width=mean(beak_width), nare_end_length=mean(nare_end_length), culmen_end_length=mean(culmen_end_length))
+
+morpho_avg <- morpho_avg[!duplicated(morpho_avg$BGP_ID),]
+
+morpho_avg <- na.omit(morpho_avg)
+colSums(is.na(morpho_avg))
+morpho_num <- morpho_avg[,3:12]
+
+
+
+corr_m <- cor(morpho_num)
+ggcorrplot(corr_m)
+
+```
+
+```{r}
+morpho_avg #the df with individuals (character) and groups (factor)
+morpho_num #the df with just the variables
+#nothing has been normalized
+
+#taking the active variable, ie individuals and the measurements that go into the PCA
+morpho.active <- morpho_avg[,c(1, 3:11)]
+
+#now need to standardize the variables, but using the PCA function that's already done so don't need to do it prior to running the PCA in this case, otherwise use scale()... x-mean(x)/sd(x)
+#need to remove the column for individual though...
+morpho.active.1 <- morpho.active[,-1]
+morpho.pca <- PCA(morpho.active.1,  scale.unit=T, graph=F)
+
+eig.val <- get_eig(morpho.pca)
+eig.val
+fviz_eig(morpho.pca, addlabels = T)
+```
+
+```{r}
+var <- get_pca_var(morpho.pca)
+head(var$coord)
+
+```
+
+```{r}
+fviz_pca_var(morpho.pca, col.var="black")
+fviz_cos2(morpho.pca, choice="var", axes=1:4)
+library("corrplot")
+corrplot(var$contrib, is.corr=F)
+```
+
+```{r}
+fviz_pca_ind(morpho.pca)
+fviz_pca_ind(morpho.pca, col.ind = "cos2", 
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+             repel = TRUE # Avoid text overlapping (slow if many points)
+             )
+```
+
+```{r}
+fviz_pca_ind(morpho.pca,
+             geom.ind = "point", # show points only (nbut not "text")
+             col.ind = morpho_avg$site, # color by groups
+             palette = c("#00AFBB", "#E7B800"),
+             addEllipses = TRUE, # Concentration ellipses
+             legend.title = "Groups"
+             )
+```
+
+# LINEAR REGRESSIONS WITH BODY SIZE
+To get residual values that will be corrected for body size and can be used in the PCA
+
+```{r}
+morp.sex.og <- read.csv("~/Desktop/GCRF/R data/GCRF_morpho_sex.csv")
+#morp.sex$site, morp.sex$Sex, morp.sex$BGP_ID,
+morp.sex <- as.data.frame(cbind(as.numeric(morp.sex.og$wing), as.numeric(morp.sex.og$tarsus), as.numeric(morp.sex.og$weight), as.numeric(morp.sex.og$tail_length), as.numeric(morp.sex.og$nare_length), as.numeric(morp.sex.og$bristle_length), as.numeric(morp.sex.og$beak_depth), as.numeric(morp.sex.og$beak_width), as.numeric(morp.sex.og$culmen_end_length)))
+morp.sex <- as.data.frame(cbind(morp.sex.og$site, morp.sex.og$Sex, morp.sex.og$BGP_ID, morp.sex))
+colnames(morp.sex) <- c("site", "sex", "BGP_ID", "wing", "tarsus", "weight", "tail_length", "nare_length", "bristle_length", "beak_depth", "beak_width", "culmen_end_length")
+females <- na.omit(morp.sex %>% filter(sex=="F"))
+females <- females %>% group_by(BGP_ID, site) %>% reframe(wing=mean(wing), tarsus=mean(tarsus), weight=mean(weight), tail_length=mean(tail_length), nare_length=mean(nare_length), bristle_length=mean(bristle_length), beak_depth=(beak_depth), beak_width=mean(beak_width), culmen_end_length=mean(culmen_end_length))
+
+wing.f <- na.omit(as.data.frame(cbind(females$site, females$BGP_ID, females$wing, females$tarsus)))
+colnames(wing.f) <- c("site", "BGP_ID", "wing", "tarsus")
+tail.f <- na.omit(as.data.frame(cbind(females$site, females$BGP_ID, females$tail_length, females$tarsus)))
+colnames(tail.f) <- c("site", "BGP_ID", "tail", "tarsus")
+nare.f <- na.omit(as.data.frame(cbind(females$site, females$BGP_ID, females$nare_length, females$tarsus)))
+colnames(nare.f) <- c("site", "BGP_ID", "nare", "tarsus")
+bristle_l.f <- na.omit(as.data.frame(cbind(females$site, females$BGP_ID, females$bristle_length, females$tarsus)))
+colnames(bristle_l.f) <- c("site", "BGP_ID", "bristle_length", "tarsus")
+bill_l.f <- na.omit(as.data.frame(cbind(females$site, females$BGP_ID, females$culmen_end_length, females$tarsus)))
+colnames(bill_l.f) <- c("site", "BGP_ID", "bill_length", "tarsus")
+bill_d.f <- na.omit(as.data.frame(cbind(females$site, females$BGP_ID, females$beak_depth, females$tarsus)))
+colnames(bill_d.f) <- c("site", "BGP_ID", "bill_depth", "tarsus")
+bill_w.f <- na.omit(as.data.frame(cbind(females$site, females$BGP_ID, females$beak_width, females$tarsus)))
+colnames(bill_w.f) <- c("site", "BGP_ID", "bill_width", "tarsus")
+```
+
+## Female linear models
+```{r}
+wing.f.lm <- lm(as.numeric(wing) ~ as.numeric(tarsus), data=wing.f)
+summary(wing.f.lm)
+ggplot(wing.f, aes(x=as.numeric(wing), y=as.numeric(tarsus)))+
+  geom_point()+
+  geom_smooth(method=lm)+
+  theme_classic()
+plot(wing.f.lm$residuals)
+wing.f.res <- wing.f.lm$residuals
+
+tail.f.lm <- lm(as.numeric(tail) ~ as.numeric(tarsus), data=tail.f)
+summary(tail.f.lm)
+ggplot(tail.f, aes(x=as.numeric(tail), y=as.numeric(tarsus)))+
+  geom_point()+
+  geom_smooth(method=lm)+
+  theme_classic()
+plot(tail.f.lm$residuals)
+tail.f.res <- tail.f.lm$residuals
+
+nare.f.lm <- lm(as.numeric(nare) ~ as.numeric(tarsus), data=nare.f)
+summary(nare.f.lm)
+ggplot(nare.f, aes(x=as.numeric(tarsus), y=as.numeric(nare)))+
+  geom_point()+
+  geom_smooth(method=lm)+
+  theme_classic()
+plot(nare.f.lm$residuals)
+nare.f.res <- nare.f.lm$residuals
+
+bristle_l.f.lm <- lm(as.numeric(bristle_length) ~ as.numeric(tarsus), data=bristle_l.f)
+summary(bristle_l.f.lm)
+ggplot(bristle_l.f, aes(x=as.numeric(tarsus), y=as.numeric(bristle_length)))+
+  geom_point()+
+  geom_smooth(method=lm)+
+  theme_classic()
+plot(bristle_l.f.lm$residuals)
+bristle_l.f.res <- bristle_l.f.lm$residuals
+
+bill_l.f.lm <- lm(as.numeric(bill_length) ~ as.numeric(tarsus), data=bill_l.f)
+summary(bill_l.f.lm)
+ggplot(bill_l.f, aes(x=as.numeric(tarsus), y=as.numeric(bill_length)))+
+  geom_point()+
+  geom_smooth(method=lm)+
+  theme_classic()
+plot(bill_l.f.lm$residuals)
+bill_l.f.res <- bill_l.f.lm$residuals
+
+bill_d.f.lm <- lm(as.numeric(bill_depth) ~ as.numeric(tarsus), data=bill_d.f)
+summary(bill_d.f.lm)
+ggplot(bill_d.f, aes(x=as.numeric(tarsus), y=as.numeric(bill_depth)))+
+  geom_point()+
+  geom_smooth(method=lm)+
+  theme_classic()
+plot(bill_d.f.lm$residuals)
+bill_d.f.res <- bill_d.f.lm$residuals
+
+bill_w.f.lm <- lm(as.numeric(bill_width) ~ as.numeric(tarsus), data=bill_w.f)
+summary(bill_w.f.lm)
+ggplot(bill_w.f, aes(x=as.numeric(tarsus), y=as.numeric(bill_width)))+
+  geom_point()+
+  geom_smooth(method=lm)+
+  theme_classic()
+plot(bill_w.f.lm$residuals)
+bill_w.f.res <- bill_w.f.lm$residuals
+
+female.res <- as.data.frame(cbind(as.numeric(wing.f.res), as.numeric(tail.f.res), as.numeric(nare.f.res), as.numeric(bristle_l.f.res), as.numeric(bill_l.f.res), as.numeric(bill_d.f.res), as.numeric(bill_w.f.res), as.numeric(wing.f$tarsus)))
+colnames(female.res) <- c("wing", "tail", "nare", "bristle_lenght", "bill_lenght", "bill_depth", "bill_width", "tarsus")
+```
+
+## Female PCA
+```{r}
+female.pca <- PCA(female.res,  scale.unit=T, graph=F)
+
+eig.val.f <- get_eig(female.pca)
+eig.val.f
+fviz_eig(female.pca, addlabels = T)
+```
+
+```{r}
+var.f <- get_pca_var(female.pca)
+head(var.f$coord)
+
+```
+
+```{r}
+fviz_pca_var(female.pca, col.var="black")
+fviz_cos2(female.pca, choice="var", axes=1:2)
+
+corrplot(var.f$contrib, is.corr=F)
+```
+
+```{r}
+fviz_pca_ind(female.pca)
+fviz_pca_ind(female.pca, col.ind = "cos2", 
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+             repel = TRUE # Avoid text overlapping (slow if many points)
+             )
+```
+
+```{r}
+fviz_pca_ind(female.pca,
+             geom.ind = "point", # show points only (nbut not "text")
+             col.ind = females$site, # color by groups
+             palette = c("#00AFBB", "#E7B800"),
+             addEllipses = TRUE, # Concentration ellipses
+             legend.title = "Groups"
+             )
+```
+
+## Male linear models
+```{r}
+males <- na.omit(morp.sex %>% filter(sex=="M"))
+males <- males %>% group_by(BGP_ID, site) %>% reframe(wing=mean(wing), tarsus=mean(tarsus), weight=mean(weight), tail_length=mean(tail_length), nare_length=mean(nare_length), bristle_length=mean(bristle_length), beak_depth=(beak_depth), beak_width=mean(beak_width), culmen_end_length=mean(culmen_end_length))
+
+wing.m <- na.omit(as.data.frame(cbind(males$site, males$BGP_ID, males$wing, males$tarsus)))
+colnames(wing.m) <- c("site", "BGP_ID", "wing", "tarsus")
+tail.m<- na.omit(as.data.frame(cbind(males$site, males$BGP_ID, males$tail_length, males$tarsus)))
+colnames(tail.m) <- c("site", "BGP_ID", "tail", "tarsus")
+nare.m<- na.omit(as.data.frame(cbind(males$site, males$BGP_ID, males$nare_length, males$tarsus)))
+colnames(nare.m) <- c("site", "BGP_ID", "nare", "tarsus")
+bristle_l.m <- na.omit(as.data.frame(cbind(males$site, males$BGP_ID, males$bristle_length, males$tarsus)))
+colnames(bristle_l.m) <- c("site", "BGP_ID", "bristle_length", "tarsus")
+bill_l.m <- na.omit(as.data.frame(cbind(males$site, males$BGP_ID, males$culmen_end_length, males$tarsus)))
+colnames(bill_l.m) <- c("site", "BGP_ID", "bill_length", "tarsus")
+bill_d.m <- na.omit(as.data.frame(cbind(males$site, males$BGP_ID, males$beak_depth, males$tarsus)))
+colnames(bill_d.m) <- c("site", "BGP_ID", "bill_depth", "tarsus")
+bill_w.m <- na.omit(as.data.frame(cbind(males$site, males$BGP_ID, males$beak_width, males$tarsus)))
+colnames(bill_w.m) <- c("site", "BGP_ID", "bill_width", "tarsus")
+```
+
+```{r}
+wing.m.lm <- lm(as.numeric(wing) ~ as.numeric(tarsus), data=wing.m)
+summary(wing.m.lm)
+ggplot(wing.f, aes(x=as.numeric(wing), y=as.numeric(tarsus)))+
+  geom_point()+
+  geom_smooth(method=lm)+
+  theme_classic()
+plot(wing.m.lm$residuals)
+wing.m.res <- wing.m.lm$residuals
+
+tail.m.lm <- lm(as.numeric(tail) ~ as.numeric(tarsus), data=tail.m)
+summary(tail.m.lm)
+ggplot(tail.f, aes(x=as.numeric(tail), y=as.numeric(tarsus)))+
+  geom_point()+
+  geom_smooth(method=lm)+
+  theme_classic()
+plot(tail.m.lm$residuals)
+tail.m.res <- tail.m.lm$residuals
+
+nare.m.lm <- lm(as.numeric(nare) ~ as.numeric(tarsus), data=nare.m)
+summary(nare.m.lm)
+ggplot(nare.f, aes(x=as.numeric(tarsus), y=as.numeric(nare)))+
+  geom_point()+
+  geom_smooth(method=lm)+
+  theme_classic()
+plot(nare.m.lm$residuals)
+nare.m.res <- nare.m.lm$residuals
+
+bristle_l.m.lm <- lm(as.numeric(bristle_length) ~ as.numeric(tarsus), data=bristle_l.m)
+summary(bristle_l.m.lm)
+ggplot(bristle_l.f, aes(x=as.numeric(tarsus), y=as.numeric(bristle_length)))+
+  geom_point()+
+  geom_smooth(method=lm)+
+  theme_classic()
+plot(bristle_l.m.lm$residuals)
+bristle_l.m.res <- bristle_l.m.lm$residuals
+
+bill_l.m.lm <- lm(as.numeric(bill_length) ~ as.numeric(tarsus), data=bill_l.m)
+summary(bill_l.m.lm)
+ggplot(bill_l.f, aes(x=as.numeric(tarsus), y=as.numeric(bill_length)))+
+  geom_point()+
+  geom_smooth(method=lm)+
+  theme_classic()
+plot(bill_l.m.lm$residuals)
+bill_l.m.res <- bill_l.m.lm$residuals
+
+bill_d.m.lm <- lm(as.numeric(bill_depth) ~ as.numeric(tarsus), data=bill_d.m)
+summary(bill_d.m.lm)
+ggplot(bill_d.f, aes(x=as.numeric(tarsus), y=as.numeric(bill_depth)))+
+  geom_point()+
+  geom_smooth(method=lm)+
+  theme_classic()
+plot(bill_d.m.lm$residuals)
+bill_d.m.res <- bill_d.m.lm$residuals
+
+bill_w.m.lm <- lm(as.numeric(bill_width) ~ as.numeric(tarsus), data=bill_w.m)
+summary(bill_w.m.lm)
+ggplot(bill_w.f, aes(x=as.numeric(tarsus), y=as.numeric(bill_width)))+
+  geom_point()+
+  geom_smooth(method=lm)+
+  theme_classic()
+plot(bill_w.m.lm$residuals)
+bill_w.m.res <- bill_w.m.lm$residuals
+
+male.res <- as.data.frame(cbind(as.numeric(wing.m.res), as.numeric(tail.m.res), as.numeric(nare.m.res), as.numeric(bristle_l.m.res), as.numeric(bill_l.m.res), as.numeric(bill_d.m.res), as.numeric(bill_w.m.res), as.numeric(wing.f$tarsus)))
+colnames(male.res) <- c("wing", "tail", "nare", "bristle_lenght", "bill_lenght", "bill_depth", "bill_width", "tarsus")
+```
+
+## Male PCA
+```{r}
+male.pca <- PCA(male.res,  scale.unit=T, graph=F)
+
+eig.val.f <- get_eig(male.pca)
+eig.val.f
+fviz_eig(male.pca, addlabels = T)
+```
+
+```{r}
+fviz_pca_ind(male.pca,
+             geom.ind = "point", # show points only (nbut not "text")
+             col.ind = males$site, # color by groups
+             palette = c("#00AFBB", "#E7B800"),
+             addEllipses = TRUE, # Concentration ellipses
+             legend.title = "Groups",
+             title= "Males PCA"
+             )
+
+```
+
+# T TESTS USING THE RESIDUALS
+## Males
+```{r m.wing}
+male.morpho <- data.frame(males$site, male.res)
+colnames(male.morpho) <- c("site", "wing", "tail", "nare", "bristle_lenght", "bill_lenght", "bill_depth", "bill_width", "tarsus")
+
+
+qqnorm(male.morpho$wing)
+qqline(male.morpho$wing)
+
+shapiro.test(male.morpho$wing)
+
+#p=0.4597
+t.test(wing ~ site, data=male.morpho)
+ggplot()+
+  geom_boxplot(aes(x=site, y=wing), data=male.morpho)
+
+ggplot(male.morpho, aes(x=site, y=wing))+
+  geom_jitter()+
+  theme_classic()+
+  stat_summary(fun.y=mean, geom="point", shape=18,
+                 size=3, color="red")
+```
+
+```{r m.tail}
+qqnorm(male.morpho$tail)
+qqline(male.morpho$tail)
+
+shapiro.test(male.morpho$tail)
+
+#p=0.301
+t.test(tail ~ site, data=male.morpho)
+ggplot()+
+  geom_boxplot(aes(x=site, y=tail), data=male.morpho)
+
+ggplot(male.morpho, aes(x=site, y=tail))+
+  geom_jitter()+
+  theme_classic()+
+  stat_summary(fun.y=mean, geom="point", shape=18,
+                 size=3, color="red")
+
+```
+
+```{r m.nare}
+qqnorm(male.morpho$nare)
+qqline(male.morpho$nare)
+
+shapiro.test(male.morpho$nare)
+
+#p=0.301
+t.test(nare ~ site, data=male.morpho)
+ggplot()+
+  geom_boxplot(aes(x=site, y=nare), data=male.morpho)
+
+ggplot(male.morpho, aes(x=site, y=nare))+
+  geom_jitter()+
+  theme_classic()+
+  stat_summary(fun.y=mean, geom="point", shape=18,
+                 size=3, color="red")
+
+```
+
+```{r m.tarsus}
+qqnorm(male.morpho$tarsus)
+qqline(male.morpho$tarsus)
+
+shapiro.test(male.morpho$tarsus)
+
+#p=0.4919
+t.test(tarsus ~ site, data=male.morpho)
+ggplot()+
+  geom_boxplot(aes(x=site, y=tail), data=male.morpho)
+
+ggplot(male.morpho, aes(x=site, y=tail))+
+  geom_jitter()+
+  theme_classic()+
+  stat_summary(fun.y=mean, geom="point", shape=18,
+                 size=3, color="red")
+
+```
+
+```{r m.bristle_length}
+qqnorm(male.morpho$bristle_lenght)
+qqline(male.morpho$bristle_lenght)
+
+shapiro.test(male.morpho$bristle_lenght)
+
+#p=0.3299
+wilcox.test(bristle_lenght ~ site, data=male.morpho)
+ggplot()+
+  geom_boxplot(aes(x=site, y=bristle_lenght), data=male.morpho)
+
+ggplot(male.morpho, aes(x=site, y=bristle_lenght))+
+  geom_jitter()+
+  theme_classic()+
+  stat_summary(fun.y=mean, geom="point", shape=18,
+                 size=3, color="red")
+
+```
+
+```{r m.bill_lenght}
+qqnorm(male.morpho$bill_lenght)
+qqline(male.morpho$bill_lenght)
+
+shapiro.test(male.morpho$bill_lenght)
+
+#p=0.8286
+t.test(bill_lenght ~ site, data=male.morpho)
+ggplot()+
+  geom_boxplot(aes(x=site, y=bill_lenght), data=male.morpho)
+
+ggplot(male.morpho, aes(x=site, y=bill_lenght))+
+  geom_jitter()+
+  theme_classic()+
+  stat_summary(fun.y=mean, geom="point", shape=18,
+                 size=3, color="red")
+
+```
+
+```{r m.bill_depth}
+qqnorm(male.morpho$bill_depth)
+qqline(male.morpho$bill_depth)
+
+shapiro.test(male.morpho$bill_depth)
+
+#p=0.4625
+wilcox.test(bill_depth ~ site, data=male.morpho)
+ggplot()+
+  geom_boxplot(aes(x=site, y=bill_depth), data=male.morpho)
+
+ggplot(male.morpho, aes(x=site, y=bill_depth))+
+  geom_jitter()+
+  theme_classic()+
+  stat_summary(fun.y=mean, geom="point", shape=18,
+                 size=3, color="red")
+
+```
+
+```{r m.bill_width}
+qqnorm(male.morpho$bill_width)
+qqline(male.morpho$bill_width)
+
+shapiro.test(male.morpho$bill_width)
+
+#p=0.08037
+t.test(bill_width ~ site, data=male.morpho)
+ggplot()+
+  geom_boxplot(aes(x=site, y=bill_width), data=male.morpho)
+
+ggplot(male.morpho, aes(x=site, y=bill_width))+
+  geom_jitter()+
+  theme_classic()+
+  stat_summary(fun.y=mean, geom="point", shape=18,
+                 size=3, color="red")
+
+```
+
+## Females
+```{r f.wing}
+female.morpho <- data.frame(females$site, female.res)
+colnames(female.morpho) <- c("site", "wing", "tail", "nare", "bristle_lenght", "bill_lenght", "bill_depth", "bill_width", "tarsus")
+
+
+qqnorm(female.morpho$wing)
+qqline(female.morpho$wing)
+
+shapiro.test(female.morpho$wing)
+
+#p=0.001526
+t.test(wing ~ site, data=female.morpho)
+ggplot()+
+  geom_boxplot(aes(x=site, y=wing), data=female.morpho)
+
+ggplot(female.morpho, aes(x=site, y=wing))+
+  geom_jitter()+
+  theme_classic()+
+  stat_summary(fun.y=mean, geom="point", shape=18,
+                 size=3, color="red")
+```
+
+```{r f.tail}
+qqnorm(female.morpho$tail)
+qqline(female.morpho$tail)
+
+shapiro.test(female.morpho$tail)
+
+#p=0.3723
+t.test(tail ~ site, data=female.morpho)
+ggplot()+
+  geom_boxplot(aes(x=site, y=tail), data=female.morpho)
+
+ggplot(female.morpho, aes(x=site, y=tail))+
+  geom_jitter()+
+  theme_classic()+
+  stat_summary(fun.y=mean, geom="point", shape=18,
+                 size=3, color="red")
+
+```
+
+```{r f.nare*}
+qqnorm(female.morpho$nare)
+qqline(female.morpho$nare)
+
+shapiro.test(female.morpho$nare)
+
+#p=0.01998
+t.test(nare ~ site, data=female.morpho)
+ggplot()+
+  geom_boxplot(aes(x=site, y=nare), data=female.morpho)
+
+ggplot(female.morpho, aes(x=site, y=nare))+
+  geom_jitter()+
+  theme_classic()+
+  stat_summary(fun.y=mean, geom="point", shape=18,
+                 size=3, color="red")
+
+```
+
+```{r f.tarsus}
+qqnorm(female.morpho$tarsus)
+qqline(female.morpho$tarsus)
+
+shapiro.test(female.morpho$tarsus)
+
+#p=0.8496
+t.test(tarsus ~ site, data=female.morpho)
+ggplot()+
+  geom_boxplot(aes(x=site, y=tail), data=female.morpho)
+
+ggplot(female.morpho, aes(x=site, y=tail))+
+  geom_jitter()+
+  theme_classic()+
+  stat_summary(fun.y=mean, geom="point", shape=18,
+                 size=3, color="red")
+
+```
+
+```{r f.bristle_length}
+qqnorm(female.morpho$bristle_lenght)
+qqline(female.morpho$bristle_lenght)
+
+shapiro.test(female.morpho$bristle_lenght)
+
+#p=0.6501
+wilcox.test(bristle_lenght ~ site, data=female.morpho)
+ggplot()+
+  geom_boxplot(aes(x=site, y=bristle_lenght), data=female.morpho)
+
+ggplot(female.morpho, aes(x=site, y=bristle_lenght))+
+  geom_jitter()+
+  theme_classic()+
+  stat_summary(fun.y=mean, geom="point", shape=18,
+                 size=3, color="red")
+
+```
+
+```{r f.bill_lenght}
+qqnorm(female.morpho$bill_lenght)
+qqline(female.morpho$bill_lenght)
+
+shapiro.test(female.morpho$bill_lenght)
+
+#p=0.1041
+t.test(bill_lenght ~ site, data=female.morpho)
+ggplot()+
+  geom_boxplot(aes(x=site, y=bill_lenght), data=female.morpho)
+
+ggplot(female.morpho, aes(x=site, y=bill_lenght))+
+  geom_jitter()+
+  theme_classic()+
+  stat_summary(fun.y=mean, geom="point", shape=18,
+                 size=3, color="red")
+
+```
+
+```{r f.bill_depth}
+qqnorm(female.morpho$bill_depth)
+qqline(female.morpho$bill_depth)
+
+shapiro.test(female.morpho$bill_depth)
+
+#p=0.9671
+wilcox.test(bill_depth ~ site, data=female.morpho)
+ggplot()+
+  geom_boxplot(aes(x=site, y=bill_depth), data=female.morpho)
+
+ggplot(female.morpho, aes(x=site, y=bill_depth))+
+  geom_jitter()+
+  theme_classic()+
+  stat_summary(fun.y=mean, geom="point", shape=18,
+                 size=3, color="red")
+
+```
+
+```{r f.bill_width}
+qqnorm(female.morpho$bill_width)
+qqline(female.morpho$bill_width)
+
+shapiro.test(female.morpho$bill_width)
+
+#p=0.7416
+wilcox.test(bill_width ~ site, data=female.morpho)
+ggplot()+
+  geom_boxplot(aes(x=site, y=bill_width), data=female.morpho)
+
+ggplot(female.morpho, aes(x=site, y=bill_width))+
+  geom_jitter()+
+  theme_classic()+
+  stat_summary(fun.y=mean, geom="point", shape=18,
+                 size=3, color="red")
+
+```
+
+
+# FEATHER MORPHOLOGY
+So the goal here is to get residuals that I can plug into the GWAS later on.
+
+```{r}
+feather <- read.csv("~/Desktop/GCRF/R data/GCRF_feather_morpho.csv")
+site <- data.frame(morpho_avg$site, morpho_avg$BGP_ID, morpho_avg$tarsus)
+colnames(site) <- c("site", "ID", "tarsus")
+
+feather_avg <- feather %>% group_by(ID) %>% summarize(pen_length=mean(Penn_length), pen_num=mean(Penn_number), plum_length=mean(Plum_length), plum_number=mean(Plum_number), nodes=mean(Nodes))
+
+feather_avg <- merge(feather_avg, site, by="ID")
+
+```
+
+```{r}
+feather_res <- data.frame(ID = feather_avg$ID)  # Assuming ID is a common column
+
+# Function to fit linear models and extract residuals
+fit_and_get_residuals <- function(data, predictor_col, response_col) {
+  lm_model <- lm(data[[response_col]] ~ data[[predictor_col]], data = feather_avg)
+  residuals <- residuals(lm_model)
+  return(residuals)
+}
+
+# Loop over each variable (X1, X2, X3, X4, X5)
+for (col_name in colnames(feather_avg)[2:6]) {
+  residuals <- fit_and_get_residuals(feather_avg, col_name, "tarsus")
+  feather_res[[col_name]] <- residuals
+}
+
+# Print the new dataframe with residuals
+print(feather_res)
+
+```
+```{r}
+feather_res <- rbind(feather_res, 
+                     c("23N00431", NA, NA, NA, NA, NA), 
+                     c("23N00434", NA, NA, NA, NA, NA), 
+                     c("23N00436", NA, NA, NA, NA, NA), 
+                     c("23N00437", NA, NA, NA, NA, NA), 
+                     c("23N00444", NA, NA, NA, NA, NA),  # Removed extra comma
+                     c("23N00447", NA, NA, NA, NA, NA), 
+                     c("23N00448", NA, NA, NA, NA, NA), 
+                     c("23N00450", NA, NA, NA, NA, NA), 
+                     c("23N00451", NA, NA, NA, NA, NA), 
+                     c("23N00452", NA, NA, NA, NA, NA), 
+                     c("23N00453", NA, NA, NA, NA, NA), 
+                     c("23N00454", NA, NA, NA, NA, NA), 
+                     c("23N00456", NA, NA, NA, NA, NA), 
+                     c("23N00457", NA, NA, NA, NA, NA), 
+                     c("23N00459", NA, NA, NA, NA, NA), 
+                     c("23N00460", NA, NA, NA, NA, NA), 
+                     c("23N00463", NA, NA, NA, NA, NA), 
+                     c("23N00464", NA, NA, NA, NA, NA), 
+                     c("23N00467", NA, NA, NA, NA, NA), 
+                     c("23N00470", NA, NA, NA, NA, NA),  # Removed extra comma
+                     c("23N00475", NA, NA, NA, NA, NA), 
+                     c("23N0079", NA, NA, NA, NA, NA), 
+                     c("23N00480", NA, NA, NA, NA, NA), 
+                     c("23N00483", NA, NA, NA, NA, NA), 
+                     c("23N00485", NA, NA, NA, NA, NA), 
+                     c("23N00488", NA, NA, NA, NA, NA), 
+                     c("23N00489", NA, NA, NA, NA, NA), 
+                     c("23N00490", NA, NA, NA, NA, NA), 
+                     c("23N00491", NA, NA, NA, NA, NA),  # Removed extra comma
+                     c("23N00557", NA, NA, NA, NA, NA))
+write.table(feather_res, file="~/Desktop/GCRF/GenomicPipeline/GWAS input/feather_residuals.txt", row.names=F, col.names=T)
+```
+
+
+Now my goal is to run a PCA with all of the feather stuff.
+
