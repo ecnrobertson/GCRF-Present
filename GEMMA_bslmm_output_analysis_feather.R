@@ -2,7 +2,7 @@
 
 #First, we are going to play with the hyperparameter estimates, which will inform us of the genetic architecture of the trait.
 
-setwd("~/Desktop/GCRF/GenomicPipeline/data/bslmm")
+setwd("GenomicPipeline/data/bslmm")
 
 # Load hyperparameter file
 # ==============================================================================
@@ -80,7 +80,7 @@ dev.off()
 
 # library to speed up loading of big tables
 
-setwd("~/Desktop/GWAS/GenomicPipeline/data/bslmm")
+setwd("GenomicPipeline/data/bslmm")
 
 library(data.table)
 

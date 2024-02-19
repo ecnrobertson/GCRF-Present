@@ -138,17 +138,6 @@ nrow(PiutePass)
 nrow(WhiteMnt)
 ```
 
-
-
-
-
-
-
-
-
-
-
-
 #ALL THE DATA
 
 ```{r}
