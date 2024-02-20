@@ -19,6 +19,7 @@ c %>% distinct(chr)
 cbPalette <- c("#999999", "#56B4E9")
 c %>% distinct(chr) %>% tally()
 c %>% group_by(chr) %>% tally() %>% write.table("GCRF_wing_lmm.outlier_tally.txt",row.names=F,quote=F,sep="\t")
+out %>% write.table("GCRF_wing_lmm.outlier_tally.txt",row.names=F,quote=F,sep="\t")
 
 
 # Make the plot
@@ -67,6 +68,7 @@ c %>% distinct(chr)
 cbPalette <- c("#999999", "#56B4E9")
 #c %>% distinct(chr) %>% tally()
 c %>% group_by(chr) %>% tally() %>% write.table("GCRF_tarsus_lmm.outlier_tally.txt",row.names=F,quote=F,sep="\t")
+out %>% write.table("GCRF_tarsus_lmm.outlier_tally.txt",row.names=F,quote=F,sep="\t")
 
 
 # Make the plot
@@ -114,7 +116,7 @@ c %>% distinct(chr)
 cbPalette <- c("#999999", "#56B4E9")
 c %>% distinct(chr) %>% tally()
 c %>% group_by(chr) %>% tally() %>% write.table("GCRF_tail_lmm_5e-8.outlier_tally.txt",row.names=F,quote=F,sep="\t")
-
+out %>% write.table("GCRF_tail_lmm_5e-8.outlier_tally.txt", row.names=F,quote=F,sep="\t")
 
 # Make the plot
 g2<-ggplot(c, aes(x=win_num, y=-log10(p_wald),color=as.factor(chr))) +
@@ -141,9 +143,9 @@ g2<-ggplot(c, aes(x=win_num, y=-log10(p_wald),color=as.factor(chr))) +
     panel.border = element_blank(),
     panel.grid.major.x = element_blank(),
     panel.grid.minor.x = element_blank()) +
-  labs(x="Scaffold",y="-log10(p_lrt)")
+  labs(x="Scaffold",y="-log10(p_wald)")
 
-png("GCRF.wing_lmm.assoc.png",width=11.7,height=8.3,units="in", res=200)
+png("GCRF.tail_length_lmm.assoc.png",width=11.7,height=8.3,units="in", res=200)
 ggarrange(g2)
 dev.off()
 
@@ -161,7 +163,7 @@ c %>% distinct(chr)
 cbPalette <- c("#999999", "#56B4E9")
 c %>% distinct(chr) %>% tally()
 c %>% group_by(chr) %>% tally() %>% write.table("GCRF_nare_length_lmm_5e-8.outlier_tally.txt",row.names=F,quote=F,sep="\t")
-
+out %>% write.table("GCRF_nare_length_lmm_5e-8.outlier_tally.txt", row.names=F,quote=F,sep="\t")
 
 # Make the plot
 g2<-ggplot(c, aes(x=win_num, y=-log10(p_wald),color=as.factor(chr))) +
@@ -256,7 +258,7 @@ c %>% distinct(chr)
 cbPalette <- c("#999999", "#56B4E9")
 c %>% distinct(chr) %>% tally()
 c %>% group_by(chr) %>% tally() %>% write.table("GCRF_beak_width_lmm_5e-8.outlier_tally.txt",row.names=F,quote=F,sep="\t")
-
+out %>% write.table("GCRF_beak_width_lmm_5e-8.outlier_tally.txt",row.names=F,quote=F,sep="\t")
 
 # Make the plot
 g2<-ggplot(c, aes(x=win_num, y=-log10(p_wald),color=as.factor(chr))) +
@@ -352,7 +354,7 @@ c %>% distinct(chr)
 cbPalette <- c("#999999", "#56B4E9")
 c %>% distinct(chr) %>% tally()
 c %>% group_by(chr) %>% tally() %>% write.table("GCRF_culmen_end_lmm_5e-8.outlier_tally.txt",row.names=F,quote=F,sep="\t")
-
+out %>% write.table("GCRF_culmen_end_lmm_5e-8.outlier_tally.txt",row.names=F,quote=F,sep="\t")
 
 # Make the plot
 g2<-ggplot(c, aes(x=win_num, y=-log10(p_wald),color=as.factor(chr))) +
