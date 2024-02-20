@@ -853,6 +853,8 @@ plink --ped culmen_end_length_output/culmen_end_length.ped --map GCRF_base_file_
 
 
 # GETTING ALLELE FREQUENCIES FOR THE FLAGGED SNPS
+
+## BSLMM SNPs
 So with filtering using the bslmm output for feathers and bills, I was able to identify some relevant SNPS.
 For the bill morphology: (above a .1 threshold for PIP values, per Chaves 2016).
 chr	rs	ps	n_miss	alpha	beta	gamma	eff
@@ -871,7 +873,7 @@ So first, we're going to be pull the SNP info from the vcf that was put into the
 This is how the SNP is stored in the vcf file:
 Scaffold_292__1_contigs__length_11690	8856	.	A	G	.	PASS	.	GT	1|1	0|0	0|0	0|0	0|1	0|1	0|0	1|1	1|1	0|0	0|0	0|0	0|0	0|0	0|0	0|0	0|0	0|0	0|0	0|0	0|0	0|1	0|1	1|1	0|0	0|1	0|0	1|1	0|1	0|0	1|1	0|1	1|1	0|0	0|0	0|0	0|1	0|0	0|0	0|1	0|0	0|1	0|0	0|0	0|0	0|0	0|0	0|1	0|0	1|1	0|0	0|0	0|1	0|0	0|0	0|0	0|1	0|1	0|0	0|0	0|0	1|1	0|0	0|1	0|0	1|1	1|1	0|0	0|0	0|0	0|0	1|1	0|0	0|0	0|0	0|0	1|1	0|0	0|0	0|1	0|0	0|0	0|0	0|0	0|0	0|0	0|0	0|0	0|0
 
-## Using PLINK to extract the values
+### Using PLINK to extract the values
 So the names are all there, just gotta figure out the right command for plink...
 
 We'll start with code the CH helped me with. We'll start with the bill SNP.
@@ -892,21 +894,21 @@ mv allele_freq_loc.map allele_freq.map
 
 plink --ped allele_freq.ped --map allele_freq.map --out allele_freq --make-bed --aec --allow-no-sex
 
-plink --bfile allele_freq --snp Scaffold_2__1_contigs__length_114774641.41203916 --aec --recodeA --out Scaffold_2__1_contigs__length_114774641.41203916.bill
+plink --bfile allele_freq --snp Scaffold_2__1_contigs__length_114774641.41203916 --aec --recodeA --out snps/Scaffold_2__1_contigs__length_114774641.41203916.bill
 ```
 
 That worked!! I now have a .fam file that has the info on the genotype! So I can import that here, merge it with the phenotype info and there ya go. Sick. So I'm just gonna do that again real quick with the feather SNPs...
 
 ```{}
-plink --bfile allele_freq --snp Scaffold_28__1_contigs__length_11240829.4798538 --aec --recodeA --out Scaffold_28__1_contigs__length_11240829.4798538.feather
+plink --bfile allele_freq --snp Scaffold_28__1_contigs__length_11240829.4798538 --aec --recodeA --out snps/Scaffold_28__1_contigs__length_11240829.4798538.feather
 
-plink --bfile allele_freq --snp Scaffold_1__1_contigs__length_151072562.91081692 --aec --recodeA --out Scaffold_1__1_contigs__length_151072562.91081692.feather
+plink --bfile allele_freq --snp Scaffold_1__1_contigs__length_151072562.91081692 --aec --recodeA --out snps/Scaffold_1__1_contigs__length_151072562.91081692.feather
 
-plink --bfile allele_freq --snp Scaffold_18__1_contigs__length_25274884.2074884 --aec --recodeA --out Scaffold_18__1_contigs__length_25274884.2074884.feather
+plink --bfile allele_freq --snp Scaffold_18__1_contigs__length_25274884.2074884 --aec --recodeA --out snps/Scaffold_18__1_contigs__length_25274884.2074884.feather
 
 ```
 
-## Importing data into R
+### Importing data into R
 
 Moving back into R after I moved the files over, going to organizing everything here.
 ```{r}
@@ -916,25 +918,25 @@ bill.PC_ped_file
 colnames(bill.PC_ped_file) <- c("FID", "IID", "PAT", "MAT", "SEX", "PHENOTYPE")
 
 
-S1.1.91081692.feather <- read.table("~/Desktop/GCRF/GenomicPipeline/data/allele_freq/Scaffold_1__1_contigs__length_151072562.91081692.feather.raw", sep = " ", header = T)
+S1.1.91081692.feather <- read.table("~/Desktop/GCRF/GCRF-Present/GenomicPipeline/data/allele_freq/Scaffold_1__1_contigs__length_151072562.91081692.feather.raw", sep = " ", header = T)
 S1.1.91081692.feather <- data.frame(feather.PC_ped_file, S1.1.91081692.feather[,7])
 colnames(S1.1.91081692.feather) <- c("FID", "IID", "PAT", "MAT", "SEX", "PHENOTYPE", "GENOTYPE")
 
-S18.1.2074884.feather <- read.table("~/Desktop/GCRF/GenomicPipeline/data/allele_freq/Scaffold_18__1_contigs__length_25274884.2074884.feather.raw", sep = " ", header = T)
+S18.1.2074884.feather <- read.table("~/Desktop/GCRF/GCRF-Present/GenomicPipeline/data/allele_freq/Scaffold_18__1_contigs__length_25274884.2074884.feather.raw", sep = " ", header = T)
 S18.1.2074884.feather <- data.frame(feather.PC_ped_file, S18.1.2074884.feather[,7])
 colnames(S18.1.2074884.feather) <- c("FID", "IID", "PAT", "MAT", "SEX", "PHENOTYPE", "GENOTYPE")
 
-S28.1.4798539.feather <- read.table("~/Desktop/GCRF/GenomicPipeline/data/allele_freq/Scaffold_28__1_contigs__length_11240829.4798538.feather.raw", sep = " ", header = T)
+S28.1.4798539.feather <- read.table("~/Desktop/GCRF/GCRF-Present/GenomicPipeline/data/allele_freq/Scaffold_28__1_contigs__length_11240829.4798538.feather.raw", sep = " ", header = T)
 S28.1.4798539.feather <- data.frame(feather.PC_ped_file, S28.1.4798539.feather[,7])
 colnames(S28.1.4798539.feather) <- c("FID", "IID", "PAT", "MAT", "SEX", "PHENOTYPE", "GENOTYPE")
 
-S2.1.41203916.bill <- read.table("~/Desktop/GCRF/GenomicPipeline/data/allele_freq/Scaffold_2__1_contigs__length_114774641.41203916.bill.raw", sep = " ", header = T)
+S2.1.41203916.bill <- read.table("~/Desktop/GCRF/GCRF-Present/GenomicPipeline/data/allele_freq/Scaffold_2__1_contigs__length_114774641.41203916.bill.raw", sep = " ", header = T)
 S2.1.41203916.bill <- data.frame(bill.PC_ped_file, S2.1.41203916.bill[,7])
 colnames(S2.1.41203916.bill) <- c("FID", "IID", "PAT", "MAT", "SEX", "PHENOTYPE", "GENOTYPE")
 
 ```
 
-## Running and plotting linear regressions
+### Running and plotting linear regressions
 
 Going to try running these in a linear regression, there are some NA values that might throw errors...
 
@@ -1042,4 +1044,183 @@ S2.41203916 <- ggplot(S2.bill.results, aes(x = GENOTYPE, y = PHENOTYPE, color = 
 
 ggsave("S2.41203916.png", plot=S2.41203916, path = "~/Desktop/GCRF/GenomicPipeline/data/allele_freq", width=9, height=7)
 
+```
+
+
+## LMM SNPs
+So I ran some LMM's on all of the morphological traits separately, and got some interesting results. I ran them first with a Bonferonii correction (0.05/7900000). I then also ran it with the widely accept 5e-8 significant threshold.
+
+Here's what I got:
+WING > 1754 SNP @<6.25e-9
+TARSUS > 0 SNP @<6.25e-9 > 0 SNP @5e-8
+TAIL LENGTH > 1 SNP @<6.25e-9 13 SNP @5e-8
+NARE LENGTH > 0 SNP @<6.25e-9 2 SNP @5e-8
+BRISTLE LENGTH > 0 SNP @<6.25e-9 0 SNP @5e-8
+BEAK WIDTH > 1 SNP @<6.25e-9 2 SNP @5e-8
+BEAK DEPTH > 0 SNP @<6.25e-9 0 SNP @5e-8
+CULMEN-END LENGTH > 0 SNP @<6.25e-9 5 SNP @5e-8
+
+So I don't think I'm going to try the allele regression method for all 1754 SNPs for the Wing cause that'd be crazy, but doing some for the bill dimensions would be cool because it makes it a bit clearer what's happening compared to the bill PC equivalent. So let's play with those two SNPs for Nare Length and Beak Width.
+
+Nare Length: (ref>alt)
+Scaffold_6__1_contigs__length_71876329.70598544 G>T
+Scaffold_6__1_contigs__length_71876329.70598546 G>C
+
+These are right next to each other which is interesting. 
+
+Beak Width
+Scaffold_1__1_contigs__length_151072562.25482370 C>T
+Scaffold_2__1_contigs__length_114774641.86583423 C>T
+
+So I'm going to use the same plink command and pull out a new VCF file.
+
+### Extracting with PLINK
+```{}
+plink --bfile allele_freq --snp Scaffold_6__1_contigs__length_71876329.70598544 --aec --recodeA --out snps/Scaffold_6__1_contigs__length_71876329.70598544.nare_length
+
+plink --bfile allele_freq --snp Scaffold_6__1_contigs__length_71876329.70598546 --aec --recodeA --out snps/Scaffold_6__1_contigs__length_71876329.70598546.nare_length
+
+########################
+plink --bfile allele_freq --snp Scaffold_1__1_contigs__length_151072562.25482370 --aec --recodeA --out snps/Scaffold_1__1_contigs__length_151072562.25482370.beak_width
+
+plink --bfile allele_freq --snp Scaffold_2__1_contigs__length_114774641.86583423 --aec --recodeA --out snps/Scaffold_2__1_contigs__length_114774641.86583423.beak_width
+```
+
+
+### Importing everything into R
+Moving stuff over from the cluster
+
+```{r}
+morpho.ped <- read.table("~/Desktop/GCRF/GCRF-Present/GenomicPipeline/GWAS input/GCRF_morpho.ped")
+morpho <- data.frame(morpho.ped$V1, morpho.ped$V2, morpho.ped[,6:19])
+colnames(morpho) <- c("FID", "BGP_ID", "wing", "tarsus", "weight", "bill_color", "tail_length", "bristle_cov", "nare_length", "bristle_length", "beak_depth", "beak_width", "tarsus_hair_full", "tarsus_hair_jointdown", "nare_end_length", "culmen_end_length")
+
+#Scaffold_6__1_contigs__length_71876329.70598544 nare length
+S6.70598544.nare_length <- read.table("~/Desktop/GCRF/GCRF-Present/GenomicPipeline/data/allele_freq/Scaffold_6__1_contigs__length_71876329.70598544.nare_length.raw", sep = " ", header = T)
+S6.70598544.nare_length <- data.frame(morpho[,1:2], morpho$nare_length, S6.70598544.nare_length[,7])
+colnames(S6.70598544.nare_length) <- c("FID", "IID", "PHENOTYPE", "GENOTYPE")
+
+#Scaffold_6__1_contigs__length_71876329.70598546 nare length
+S6.70598546.nare_length <- read.table("~/Desktop/GCRF/GCRF-Present/GenomicPipeline/data/allele_freq/Scaffold_6__1_contigs__length_71876329.70598546.nare_length.raw", sep = " ", header = T)
+S6.70598546.nare_length <- data.frame(morpho[,1:2], morpho$nare_length, S6.70598546.nare_length[,7])
+colnames(S6.70598546.nare_length) <- c("FID", "IID", "PHENOTYPE", "GENOTYPE")
+
+#Scaffold_1__1_contigs__length_151072562.25482370 beak width
+S1.25482370.beak_width <- read.table("~/Desktop/GCRF/GCRF-Present/GenomicPipeline/data/allele_freq/Scaffold_1__1_contigs__length_151072562.25482370.beak_width.raw", sep = " ", header = T)
+S1.25482370.beak_width <- data.frame(morpho[,1:2], morpho$beak_width, S1.25482370.beak_width[,7])
+colnames(S1.25482370.beak_width) <- c("FID", "IID", "PHENOTYPE", "GENOTYPE")
+
+#Scaffold_2__1_contigs__length_114774641.86583423 beak width
+S2.86583423.beak_width <- read.table("~/Desktop/GCRF/GCRF-Present/GenomicPipeline/data/allele_freq/Scaffold_2__1_contigs__length_114774641.86583423.beak_width.raw", sep = " ", header = T)
+S2.86583423.beak_width <- data.frame(morpho[,1:2], morpho$beak_width, S2.86583423.beak_width[,7])
+colnames(S2.86583423.beak_width) <- c("FID", "IID", "PHENOTYPE", "GENOTYPE")
+```
+
+```{r, S6.70598544.nare_length}
+library(ggplot2)
+S6.544.nare <- lm(as.numeric(PHENOTYPE)~GENOTYPE, data=S6.70598544.nare_length)
+summary(S6.544.nare)
+#p=3.417e-08
+S6.70598544.nare_length.no.na <- na.omit(S6.70598544.nare_length)
+
+S6.544.nare.results <- data.frame(FID=as.factor(S6.70598544.nare_length.no.na$FID), GENOTYPE = as.numeric(S6.70598544.nare_length.no.na$GENOTYPE), PHENOTYPE = as.numeric(S6.70598544.nare_length.no.na$PHENOTYPE))
+S6.544.nare.results$predicted <- predict(S6.544.nare)
+
+y_breaks <- pretty(range(S6.544.nare.results$PHENOTYPE), n=5)
+x_breaks <- seq(min(S6.544.nare.results$GENOTYPE), max(S6.544.nare.results$GENOTYPE), length.out = 3)
+group_colors <- c("1" = "lightblue3", "2" = "tomato2")
+
+S6.70598544 <- ggplot(S6.544.nare.results, aes(x = GENOTYPE, y = PHENOTYPE, color = FID)) +
+  geom_point() +   # Add data points with color aesthetic
+  geom_smooth(method = "lm", se = TRUE, color = "grey3") +  # Add smoothed trend line with confidence intervals
+  labs(x = "Genotype", y = "Nare Length (mm)") +  # Add axis labels
+  ggtitle("Nare Length vs SNP S6.70598544") +
+  scale_y_continuous(breaks = y_breaks) +
+  scale_x_continuous(breaks = x_breaks, labels = c("GG", "GT", "TT")) +
+  scale_color_manual(labels = c("WMNT", "PIPA"), values=group_colors) +  # Customize legend labels
+  theme_classic()
+
+ggsave("S6.70598544.png", plot=S6.70598544, path = "~/Desktop/GCRF/GCRF-Present/GenomicPipeline/data/allele_freq", width=9, height=7)
+```
+
+```{r, S6.70598546.nare_length}
+S6.546.nare <- lm(as.numeric(PHENOTYPE)~GENOTYPE, data=S6.70598546.nare_length)
+summary(S6.546.nare)
+#p=3.417e-08
+S6.70598546.nare_length.no.na <- na.omit(S6.70598546.nare_length)
+
+S6.546.nare.results <- data.frame(FID=as.factor(S6.70598546.nare_length.no.na$FID), GENOTYPE = as.numeric(S6.70598546.nare_length.no.na$GENOTYPE), PHENOTYPE = as.numeric(S6.70598546.nare_length.no.na$PHENOTYPE))
+S6.546.nare.results$predicted <- predict(S6.546.nare)
+
+y_breaks <- pretty(range(S6.546.nare.results$PHENOTYPE), n=5)
+x_breaks <- seq(min(S6.546.nare.results$GENOTYPE), max(S6.546.nare.results$GENOTYPE), length.out = 3)
+group_colors <- c("1" = "lightblue3", "2" = "tomato2")
+
+S6.70598546 <- ggplot(S6.546.nare.results, aes(x = GENOTYPE, y = PHENOTYPE, color = FID)) +
+  geom_point() +   # Add data points with color aesthetic
+  geom_smooth(method = "lm", se = TRUE, color = "grey3") +  # Add smoothed trend line with confidence intervals
+  labs(x = "Genotype", y = "Nare Length (mm)") +  # Add axis labels
+  ggtitle("Nare Length vs SNP S6.70598546") +
+  scale_y_continuous(breaks = y_breaks) +
+  scale_x_continuous(breaks = x_breaks, labels = c("GG", "GC", "CC")) +
+  scale_color_manual(labels = c("WMNT", "PIPA"), values=group_colors) +  # Customize legend labels
+  theme_classic()
+
+ggsave("S6.70598546.png", plot=S6.70598546, path = "~/Desktop/GCRF/GCRF-Present/GenomicPipeline/data/allele_freq", width=9, height=7)
+```
+
+Interestingly, these seem to be identical. I'm going to go ahead and say that's because they're next to each other and completely linked.
+
+```{r, S1.25482370.beak_width}
+S1.width <- lm(as.numeric(PHENOTYPE)~GENOTYPE, data=S1.25482370.beak_width)
+summary(S1.width)
+#p=5.87e-09
+S1.25482370.beak_width[S1.25482370.beak_width == "-"] <- NA
+S1.25482370.beak_width.no.na <- na.omit(S1.25482370.beak_width)
+
+S1.width.results <- data.frame(FID=as.factor(S1.25482370.beak_width.no.na$FID), GENOTYPE = as.numeric(S1.25482370.beak_width.no.na$GENOTYPE), PHENOTYPE = as.numeric(S1.25482370.beak_width.no.na$PHENOTYPE))
+S1.width.results$predicted <- predict(S1.width)
+
+y_breaks <- pretty(range(S1.width.results$PHENOTYPE), n=5)
+x_breaks <- seq(min(S1.width.results$GENOTYPE), max(S1.width.results$GENOTYPE), length.out = 3)
+group_colors <- c("1" = "lightblue3", "2" = "tomato2")
+
+S1.25482370 <- ggplot(S1.width.results, aes(x = GENOTYPE, y = PHENOTYPE, color = FID)) +
+  geom_point() +   # Add data points with color aesthetic
+  geom_smooth(method = "lm", se = TRUE, color = "grey3") +  # Add smoothed trend line with confidence intervals
+  labs(x = "Genotype", y = "Beak Width (mm)") +  # Add axis labels
+  ggtitle("Beak Width vs SNP S1.25482370") +
+  scale_y_continuous(breaks = y_breaks) +
+  scale_x_continuous(breaks = x_breaks, labels = c("CC", "CT", "TT")) +
+  scale_color_manual(labels = c("WMNT", "PIPA"), values=group_colors) +  # Customize legend labels
+  theme_classic()
+
+ggsave("S1.25482370.png", plot=S1.25482370, path = "~/Desktop/GCRF/GCRF-Present/GenomicPipeline/data/allele_freq", width=9, height=7)
+```
+
+```{r, S2.86583423.beak_width}
+S2.width <- lm(as.numeric(PHENOTYPE)~GENOTYPE, data=S2.86583423.beak_width)
+summary(S2.width)
+#p=9.965e-09
+S2.86583423.beak_width[S2.86583423.beak_width == "-"] <- NA
+S2.86583423.beak_width.no.na <- na.omit(S2.86583423.beak_width)
+
+S2.width.results <- data.frame(FID=as.factor(S2.86583423.beak_width.no.na$FID), GENOTYPE = as.numeric(S2.86583423.beak_width.no.na$GENOTYPE), PHENOTYPE = as.numeric(S2.86583423.beak_width.no.na$PHENOTYPE))
+S2.width.results$predicted <- predict(S2.width)
+
+y_breaks <- pretty(range(S2.width.results$PHENOTYPE), n=5)
+x_breaks <- seq(min(S2.width.results$GENOTYPE), max(S2.width.results$GENOTYPE), length.out = 3)
+group_colors <- c("1" = "lightblue3", "2" = "tomato2")
+
+S2.86583423 <- ggplot(S2.width.results, aes(x = GENOTYPE, y = PHENOTYPE, color = FID)) +
+  geom_point() +   # Add data points with color aesthetic
+  geom_smooth(method = "lm", se = TRUE, color = "grey3") +  # Add smoothed trend line with confidence intervals
+  labs(x = "Genotype", y = "Beak Width (mm)") +  # Add axis labels
+  ggtitle("Beak Width vs SNP S2.86583423") +
+  scale_y_continuous(breaks = y_breaks) +
+  scale_x_continuous(breaks = x_breaks, labels = c("CC", "CT", "TT")) +
+  scale_color_manual(labels = c("WMNT", "PIPA"), values=group_colors) +  # Customize legend labels
+  theme_classic()
+
+ggsave("S2.86583423.png", plot=S2.86583423  , path = "~/Desktop/GCRF/GCRF-Present/GenomicPipeline/data/allele_freq", width=9, height=7)
 ```
