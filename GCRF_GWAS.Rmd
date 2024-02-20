@@ -295,7 +295,6 @@ Seems like this might be because the phenotype file doesn't have anything.
 So I just copies the relatedness matrix from the bill_length stuff from earlier.
 
 ## 7. MLMM models
-
 So Marina got eigen values first and included those in the mlmm so I'm going to do that also.
 
 ```{}
@@ -561,7 +560,7 @@ First step is making files for every phenotypes...bleh. Lets do beak length, nar
 Repeating the steps from the feather PCA but with the bill data.
 
 ```{r}
-morpho <- read.csv("~/Desktop/GCRF/R data/GCRF_morphology.csv")
+morpho <- read.csv("~/Desktop/GCRF/GCRF-Present/R data/GCRF_morphology.csv")
 morpho <- morpho[1:189,]
 
 morpho_num <- as.data.frame(cbind(as.numeric(morpho$nare_length), as.numeric(morpho$beak_depth), as.numeric(morpho$beak_width), as.numeric(morpho$culmen_end_length)))
@@ -753,6 +752,103 @@ conda activate GWAS2
 
 
 
+
+
+
+
+## LMM
+Setting up a spreadsheet with all of the morphology separately.
+```{r}
+morpho <- read.csv("~/Desktop/GCRF/GCRF-Present/R data/GCRF_morphology.csv", na.strings = c("", "NA"))
+morpho <- morpho[1:189,]
+morpho <- morpho[order(morpho$BGP_ID), ]
+rownames(morpho) <- NULL
+morpho <- morpho[(48:145),]
+rownames(morpho) <- NULL
+morpho <- morpho[!duplicated(morpho$BGP_ID),]
+morpho <- morpho[c(-15, -18,-35,-66),]
+morpho <- rbind(morpho,
+                c("PIPA", NA, NA, "23N00557", NA, NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA),
+                c("PIPA", NA, NA, "23N00459", NA, NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA))
+rownames(morpho) <- NULL
+morpho <- morpho[order(morpho$BGP_ID), ]
+
+FID_file <- read.table("~/Desktop/GCRF/GCRF-Present/GenomicPipeline/locID_num.txt", header = FALSE, sep = " ", na.strings = c("", "NA"))
+
+FID_file$V3 <- 0
+FID_file$V4 <- 0
+FID_file$V5 <- 0
+#adding the bill_length as the 6th row, skipping tarsus for now
+morpho_ped_file <- data.frame(FID_file, morpho[,c(5:18)])
+write.table(morpho_ped_file, file="~/Desktop/GCRF/GCRF-Present/GenomicPipeline/GWAS input/GCRF_morpho.ped", row.names=F, col.names=F)
+```
+
+```{}
+sed 's/"//g' GCRF_morpho.ped > GCRF_morpho_clean.ped
+sed 's/-/NA/g' GCRF_morpho_clean.ped > GCRF_morpho.ped
+
+cut -d ' ' -f 1-6 GCRF_morpho.ped > wing
+cut -d ' ' -f 1-5,7 GCRF_morpho.ped > tarsus
+cut -d ' ' -f 1-5,10 GCRF_morpho.ped > tail_length
+cut -d ' ' -f 1-5,12 GCRF_morpho.ped > nare_length
+cut -d ' ' -f 1-5,13 GCRF_morpho.ped > bristle_length
+cut -d ' ' -f 1-5,14 GCRF_morpho.ped > beak_depth
+cut -d ' ' -f 1-5,15 GCRF_morpho.ped > beak_width
+cut -d ' ' -f 1-5,19 GCRF_morpho.ped > culmen_end_length
+
+paste wing ../GCRF_genotypes.ped > wing.ped
+paste tarsus ../GCRF_genotypes.ped > tarsus.ped
+paste tail_length ../GCRF_genotypes.ped > tail_length.ped
+paste nare_length ../GCRF_genotypes.ped > nare_length.ped
+paste bristle_length ../GCRF_genotypes.ped > bristle_length.ped
+paste beak_depth ../GCRF_genotypes.ped > beak_depth.ped
+paste beak_width ../GCRF_genotypes.ped > beak_width.ped
+paste culmen_end_length ../GCRF_genotypes.ped > culmen_end_length.ped
+```
+
+```{}
+plink --ped wing_output/wing.ped --map GCRF_base_file_loc.map --out wing_output/wing --make-bed --aec --allow-no-sex
+
+plink --ped tarsus_output/tarsus.ped --map GCRF_base_file_loc.map --out tarsus_output/tarsus --make-bed --aec --allow-no-sex
+
+plink --ped tail_length_output/tail_length.ped --map GCRF_base_file_loc.map --out tail_length_output/tail_length --make-bed --aec --allow-no-sex
+
+plink --ped nare_length_output/nare_length.ped --map GCRF_base_file_loc.map --out nare_length_output/nare_length --make-bed --aec --allow-no-sex
+
+plink --ped bristle_length_output/bristle_length.ped --map GCRF_base_file_loc.map --out bristle_length_output/bristle_length --make-bed --aec --allow-no-sex
+
+plink --ped beak_depth_output/beak_depth.ped --map GCRF_base_file_loc.map --out beak_depth_output/beak_depth --make-bed --aec --allow-no-sex
+
+plink --ped beak_width_output/beak_width.ped --map GCRF_base_file_loc.map --out beak_width_output/beak_width --make-bed --aec --allow-no-sex
+
+plink --ped culmen_end_length_output/culmen_end_length.ped --map GCRF_base_file_loc.map --out culmen_end_length_output/culmen_end_length --make-bed --aec --allow-no-sex
+
+```
+
+```{}
+/projects/ericacnr@colostate.edu/GEMMA/bin/gemma -bfile wing -k output/relate.cXX.txt.cXX.txt -lmm 1 -o wing_lmm -w 500000 -s 5000000
+
+/projects/ericacnr@colostate.edu/GEMMA/bin/gemma -bfile tarsus -gk 1 -o relate
+/projects/ericacnr@colostate.edu/GEMMA/bin/gemma -bfile tarsus -k output/relate.cXX.txt -lmm 1 -o tarsus_lmm -w 500000 -s 5000000
+
+/projects/ericacnr@colostate.edu/GEMMA/bin/gemma -bfile tail_length -gk 1 -o relate
+/projects/ericacnr@colostate.edu/GEMMA/bin/gemma -bfile tail_length -k output/relate.cXX.txt -lmm 1 -o tail_length_lmm -w 500000 -s 5000000
+
+/projects/ericacnr@colostate.edu/GEMMA/bin/gemma -bfile nare_length -gk 1 -o relate
+/projects/ericacnr@colostate.edu/GEMMA/bin/gemma -bfile nare_length -k output/relate.cXX.txt -lmm 1 -o nare_length_lmm -w 500000 -s 5000000
+
+/projects/ericacnr@colostate.edu/GEMMA/bin/gemma -bfile bristle_length -gk 1 -o relate
+/projects/ericacnr@colostate.edu/GEMMA/bin/gemma -bfile bristle_length -k output/relate.cXX.txt -lmm 1 -o bristle_length_lmm -w 500000 -s 5000000
+
+/projects/ericacnr@colostate.edu/GEMMA/bin/gemma -bfile beak_depth -gk 1 -o relate
+/projects/ericacnr@colostate.edu/GEMMA/bin/gemma -bfile beak_depth -k output/relate.cXX.txt -lmm 1 -o beak_depth_lmm -w 500000 -s 5000000
+
+/projects/ericacnr@colostate.edu/GEMMA/bin/gemma -bfile beak_width -gk 1 -o relate
+/projects/ericacnr@colostate.edu/GEMMA/bin/gemma -bfile beak_width -k output/relate.cXX.txt -lmm 1 -o beak_width_lmm -w 500000 -s 5000000
+
+/projects/ericacnr@colostate.edu/GEMMA/bin/gemma -bfile culmen_end_length -gk 1 -o relate
+/projects/ericacnr@colostate.edu/GEMMA/bin/gemma -bfile culmen_end_length -k output/relate.cXX.txt -lmm 1 -o culmen_end_length_lmm -w 500000 -s 5000000
+```
 
 
 
