@@ -608,7 +608,7 @@ fviz_eig(morpho.pca, addlabels = T)
 
 ```{r}
 var <- get_pca_var(morpho.pca)
-head(var$coord)
+var$coord
 ```
 
 ```{r}
