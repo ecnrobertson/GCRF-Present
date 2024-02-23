@@ -2,7 +2,7 @@
 
 #First, we are going to play with the hyperparameter estimates, which will inform us of the genetic architecture of the trait.
 
-setwd("GenomicPipeline/data/bslmm")
+setwd("~/Desktop/GCRF/GCRF-Present/GenomicPipeline/data/bslmm")
 
 # Load hyperparameter file
 # ==============================================================================

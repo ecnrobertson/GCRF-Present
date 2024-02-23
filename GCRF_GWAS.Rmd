@@ -912,9 +912,9 @@ plink --bfile allele_freq --snp Scaffold_18__1_contigs__length_25274884.2074884 
 
 Moving back into R after I moved the files over, going to organizing everything here.
 ```{r}
-feather.PC_ped_file
+feather.PC_ped_file <- read.table("~/Desktop/GCRF/GCRF-Present/GenomicPipeline/GWAS input/GCRF_feather_PC.txt")
 colnames(feather.PC_ped_file) <- c("FID", "IID", "PAT", "MAT", "SEX", "PHENOTYPE")
-bill.PC_ped_file
+bill.PC_ped_file <- read.table("~/Desktop/GCRF/GCRF-Present/GenomicPipeline/GWAS input/GCRF_bill_PC.txt")
 colnames(bill.PC_ped_file) <- c("FID", "IID", "PAT", "MAT", "SEX", "PHENOTYPE")
 
 
@@ -1017,6 +1017,7 @@ S28.4798539 <- ggplot(S28.feather.results, aes(x = GENOTYPE, y = PHENOTYPE, colo
   theme_classic()
 
 ggsave("S28.4798539.png", plot=S28.4798539, path = "~/Desktop/GCRF/GenomicPipeline/data/allele_freq", width=9, height=7)
+
 ```
 
 ```{r, S2.1.41203916}
@@ -1264,7 +1265,92 @@ The stats for the one heterozygous individual are:
 So the depth of the first allele isn't very much, but the second is good. Total read depth is good. Genotype quality is 26, which is good. 
 
 So I'm going to go ahead and say that generally, I trust these calls which makes it seem like there actually is only one heterozygote for this snp, which means something cool might actually be going on.
-```{}
 
+I'm trying the regression from above as a quadratic instead to see if it fits better. It seems like the R-squared values are a bit higher but the confidence interval is getting a lot wider... not sure what the threshold for "better" is here.
 
+```{r}
+# Fit quadratic regression model
+S28.feather_quad <- lm(PHENOTYPE ~ GENOTYPE + I(GENOTYPE^2), data = S28.1.4798539.feather)
+
+# Summary of the quadratic regression model
+summary(S28.feather_quad)
+
+# Removing NA values
+S28.1.4798539.feather.no.na <- na.omit(S28.1.4798539.feather)
+
+# Create a data frame for results
+S28.feather.results <- data.frame(FID = as.factor(S28.1.4798539.feather.no.na$FID),
+                                   GENOTYPE = as.numeric(S28.1.4798539.feather.no.na$GENOTYPE),
+                                   PHENOTYPE = as.numeric(S28.1.4798539.feather.no.na$PHENOTYPE))
+
+# Add predicted values from the quadratic regression model
+S28.feather.results$predicted <- predict(S28.feather_quad)
+
+# Define breaks and colors for plotting
+y_breaks <- pretty(range(S28.feather.results$PHENOTYPE), n = 5)
+x_breaks <- seq(min(S28.feather.results$GENOTYPE), max(S28.feather.results$GENOTYPE), length.out = 3)
+group_colors <- c("1" = "lightblue3", "2" = "tomato2")
+
+# Plotting with quadratic regression line
+S28.4798539.2 <- ggplot(S28.feather.results, aes(x = GENOTYPE, y = PHENOTYPE, color = FID)) +
+  geom_point() +   # Add data points with color aesthetic
+  geom_smooth(method = "lm", formula = y ~ poly(x, 2), se = TRUE, color = "grey3") +  # Add quadratic trend line with confidence intervals
+  labs(x = "Genotype", y = "Feather Morphology PC1") +  # Add axis labels
+  ggtitle("Feather Morphology vs SNP S28.4798539") +
+  scale_y_continuous(breaks = y_breaks) +
+  scale_x_continuous(breaks = x_breaks, labels = c("AA", "AG", "GG")) +
+  scale_color_manual(labels = c("WMNT", "PIPA"), values = group_colors) +  # Customize legend labels
+  theme_classic()
+
+# Display the plot
+print(S28.4798539.2)
+
+ggsave("S28.4798539_quad.png", plot=S28.4798539, path = "~/Desktop/GCRF/GenomicPipeline/data/allele_freq", width=9, height=7)
+```
+
+```{r}
+# Summary of linear regression model
+summary(S28.feather)
+#Call:
+#lm(formula = PHENOTYPE ~ GENOTYPE, data = S28.1.4798539.feather)
+
+#Residuals:
+#    Min      1Q  Median      3Q     Max 
+#-4.2729 -0.6994  0.0462  0.7834  4.1695 
+
+#Coefficients:
+#            Estimate Std. Error t value Pr(>|t|)    
+#(Intercept)   0.3120     0.1586   1.967   0.0529 .  
+#GENOTYPE     -1.6949     0.2423  -6.995 9.48e-10 ***
+#---
+#Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+#Residual standard error: 1.31 on 75 degrees of freedom
+#  (12 observations deleted due to missingness)
+#Multiple R-squared:  0.3948,	Adjusted R-squared:  0.3868 
+#F-statistic: 48.93 on 1 and 75 DF,  p-value: 9.482e-10
+
+######################################
+# Summary of quadratic regression model
+summary(S28.feather_quad)
+
+#Call:
+#lm(formula = PHENOTYPE ~ GENOTYPE + I(GENOTYPE^2), data = S28.1.4798539.feather)
+
+#Residuals:
+#    Min      1Q  Median      3Q     Max 
+#-4.2538 -0.6802  0.0654  0.6641  4.1886 
+
+#Coefficients:
+#              Estimate Std. Error t value Pr(>|t|)  
+#(Intercept)     0.2929     0.1556   1.883   0.0637 .
+#GENOTYPE        3.6205     2.5861   1.400   0.1657  
+#I(GENOTYPE^2)  -2.6936     1.3050  -2.064   0.0425 *
+#---
+#Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+#Residual standard error: 1.283 on 74 degrees of freedom
+#  (12 observations deleted due to missingness)
+#Multiple R-squared:  0.4278,	Adjusted R-squared:  0.4123 
+#F-statistic: 27.66 on 2 and 74 DF,  p-value: 1.072e-09
 ```
