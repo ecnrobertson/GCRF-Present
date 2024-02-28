@@ -2,11 +2,11 @@
 
 #First, we are going to play with the hyperparameter estimates, which will inform us of the genetic architecture of the trait.
 
-setwd("~/Desktop/GCRF/GCRF-Present/GenomicPipeline/data/bslmm")
+setwd("GenomicPipeline/data/bslmm")
 
 # Load hyperparameter file
 # ==============================================================================
-hyp.params<-read.table("GCRF_feather_PC.bslmm.hyp.txt",header=T)
+hyp.params<-read.table("GCRF_bill_PC.bslmm.hyp.txt",header=T)
 # ==============================================================================
 
 # Get mean, median, and 95% ETPI of hyperparameters
@@ -73,23 +73,25 @@ dev.off()
 
 #Okay so these graphs don't look too great, so might need to rerun the bslmm and see if I get "better mixing".
 
-# cat GCRF_feather_PC.bslmm.param.txt | cut -d "_" -f 2 > scaffold_nums.txt
-# sed '1d' scaffold_nums.txt > scaffold_nums_clean_featherPC.txt
-# head scaffold_nums_clean_featherPC.txt 
+#pulling out the numbers from the scaffolds so I have a numeric to work with for sorting and whatnot.
+# cat GCRF_bill_PC.bslmm.param.txt | cut -d "_" -f 2 > scaffold_nums.txt
+# sed '1d' scaffold_nums.txt > scaffold_nums_clean_billPC.txt
+# head scaffold_nums_clean_billPC.txt 
+
 
 
 # library to speed up loading of big tables
 
-setwd("~/Desktop/GCRF/GenomicPipeline/data/bslmm")
+setwd("GenomicPipeline/data/bslmm")
 
 library(data.table)
 
-#nums <- read.table("scaffold_nums_clean_featherPC.txt")
-#colnames(nums) <- "chr"
+nums <- read.table("scaffold_nums_clean_billPC.txt")
+colnames(nums) <- "chr"
 
 # Load parameters output
 # ==============================================================================
-params<-fread("../bslmm/GCRF_featherPC_clean.SNP.rm_hets.RegionFID.imuted_gt.fix_name.noNA.chr1-31ZF.genotype.txt",header=T,sep="\t", data.table=F)
+params<-fread("GCRF_clean.SNP.rm_hets.RegionFID.imuted_gt.fix_name.noNA.chr1-31ZF.genotype.txt",header=T,sep="\t", data.table=F)
 # ==============================================================================
 
 #params <- data.frame(nums, params[,-1])
@@ -164,10 +166,8 @@ pip50<-params.pipsort[params.pipsort$gamma>=0.50,]
 # ------------------------------------------------------------------------------
 
 # add linkage group column (chr)
-
-#params["chr"]<-chr
-colnames(params) <- c("rs", "chr", "POS", "n_miss", "alpha", "beta", "gamma", "eff")
 chr<-params$chr
+colnames(params) <- c("rs", "chr", "POS", "n_miss", "alpha", "beta", "gamma", "eff")
 
 # sort by linkage group and position
 params.sort<-params[order(as.numeric(params$chr), params$rs),]
@@ -181,11 +181,12 @@ chrs<-sort(unique(as.numeric(chr)))
 # also opening vectorial files with many objects is slow
 # ------------------------------------------------------------------------------
 # ------------------------------------------------------------------------------
-png(file="../bslmm/pip_plot_feather0.1_chr.png", width=11.7,height=8.3,units="in",res=200)
+png(file="pip_plot_bill0.1_chr.png", width=11.7,height=8.3,units="in",res=200)
 
 # set up empty plot
-plot(-1,-1,xlim=c(0,nrow(params.sort)),ylim=c(0,1),ylab="PIP",xlab="Chromosome", xaxt="n")
+plot(-1,-1,xlim=c(0,nrow(params.sort)),ylim=c(0,1),ylab="PIP",xlab="linkage group", xaxt="n")
 
+#title("Title of Your Plot")
 # plot grey bands for chromosome/linkage groups
 # ------------------------------------------------------------------------------
 start<-1
@@ -250,4 +251,3 @@ text(x,y,labels=params.sort$rs[params.sort$gamma>=0.1], adj=c(0,0), cex=0.8)
 # close device
 dev.off()
 # ==============================================================================
-
