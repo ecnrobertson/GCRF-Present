@@ -20,8 +20,56 @@ Here I will be going through the steps for running a GWAS on a variety of morpho
 -max allele freq is .95
 -depth greater than or equal to 4
 
-# WORKFLOW
+# PRE-GWAS WORKFLOW
+## Workflow post GATK issues
+I: *HC_HC_genotypes_unfiltered.vcf.gz
+
+O: *_mk_dup0.vcf
+
+
+###################
+Merging all the mkdp0 files together into one merged vcf file to do the downstream filtering with
+I: *_mk_dup0.vcf.gz
+
+picard MergeVcfs -I 1_mk_dup0.vcf.gz -I 2_mk_dup0.vcf.gz -I 3_mk_dup0.vcf.gz -I 4_mk_dup0.vcf.gz -I 5_mk_dup0.vcf.gz -I 6_mk_dup0.vcf.gz -I 7_mk_dup0.vcf.gz -I 8_mk_dup0.vcf.gz -I 9_mk_dup0.vcf.gz -I $
+
+O: GCRF_merged_mkdp0.vcf
+
+
+
+###################
+Checking the number of lines
+cat GCRF_merged_mkdp0.vcf | wc -l
+16429366
+
+
+###################
+Initial filtering
+I: GCRF_merged_mkdp0.vcf
+
+vcf=GCRF_merged_mkdp0.vcf
+
+out_basic=GCRF.mkdp0_merged_25missing_min.5max.95.vcf.gz
+
+bcftools view -m 2 -M 2 --type snps -i 'F_MISSING < 0.25' --min-af 0.05 --max-af 0.95 ${vcf} -O z -o ../../../called_genotypes/filtered/${out_basic}
+bcftools index ../../../called_genotypes/filtered/${out_basic}
+bcftools stats ../../../called_genotypes/filtered/${out_basic} > ../../../called_genotypes/filtered/${out_basic}.stats
+
+out_depth=../../../called_genotypes/filtered/GCRF.mkdp0_merged_25missing_min.5max.95_depth4.vcf.gz
+bcftools filter -i 'INFO/DP >= 4' ../../../called_genotypes/filtered/${out_basic} -O z -o ${out_depth}
+bcftools index ${out_depth}
+bcftools stats ${out_depth} > ${out_depth}.stats
+
+O: GCRF.mkdp0_merged_25missing_min.5max.95_depth4.vcf.gz
+
+###################
+Checking lines of the filtered files
+zcat ../../../called_genotypes/filtered/GCRF.mkdp0_merged_25missing_min.5max.95_depth4.vcf.gz | wc -l
+7497657
+
 ## 1. VQSR filtering
+This is done after marking the bases that has zero depth and were being called as homozygous reference (a stupid thing that gatk 4.0+ does). 
+
 This filtering is to remove errors in genotypes due to sequencing issues. The script I was given actually wants this to be run on an already merged vcf file, but when I tried this the filtering went fine but downstream the imputation kept failing due to a weird error. So I regrouped and did the filtering on each scaffold individually. This was implemented with the vqsr_filt.sh script, which had the following filters:
 
 -filter "QUAL < 30.0" --filter-name "QUAL30" \
@@ -37,24 +85,29 @@ The last two, MQRankSum and ReadPosRankSum didn't seem to apply, the error was s
 Once all the scaffolds were filtered, I moved the files to a new folder for imputation.
 
 ## 2. BEAGLE 4.1 Imputation
-I merged the vqsr filtered files into a single GCRF_merged file. Then I applied BEAGLE4.1 to impute missing genotypes. This was done with the script impute.sh.
+I merged the GCRF_merged file and filtered that. Then I applied BEAGLE4.1 to impute missing genotypes. This was done with the script impute.sh.
 
 ```{}
 BEAGLE_JAR="/projects/ericacnr@colostate.edu/mambaforge/envs/bioinf/java/beagle.27Jan18.7e1.jar"
-j=GCRF_merged.vcf.gz
+j=GCRF.mkdp0_merged_25missing_min.5max.95_depth4_vqsr.vcf
 
 java -Xmx180G -jar $BEAGLE_JAR \
 gt="$j" \
-out=GCRF_merged_imputed4.1 \
+out=GCRF.mkdp0_merged_25missing_min.5max.95_depth4_vqsr.vcf.gl_impute4.1.vcf.gz \
 nthreads=48
 ```
 
 The log had this as the final output: 
-Number of markers:             7942760
-Total time for building model: 2 hours 18 minutes 11 seconds
-Total time for sampling:       35 minutes 10 seconds
-Total run time:                3 hours 3 minutes 55 seconds
+Number of markers:             7487128
+Total time for building model: 2 hours 35 minutes 59 seconds
+Total time for sampling:       42 minutes 24 seconds
+Total run time:                3 hours 28 minutes 15 seconds
 
+mv GCRF.mkdp0_merged_25missing_min.5max.95_depth4_vqsr.vcf.gl_impute4.1.vcf.gz GCRF.mkdp0_merged_25missing_min.5max.95_depth4_vqsr_gl_impute4.1.vcf.gz
+
+Just renamed the output file a little.
+
+#### didn't end up doing all following stuff this the second time around, saving for prosperity. The line number of the imputed file post mkdp0 filtering is 7487139 which is perfect.
 Which suggests it was running the correct number of SNPs (7942760) however upon inspecting the file there was over 9mil lines, which doesn't make sense and suggested that some of the markers (~2mil) were being duplicated. Additionally, there was an error with the imputed files where the Chromosome position was missing in the header. So to fix that issue first, I cropped the header from the original merged file and added it to the imputed file.
 
 ```{}
@@ -117,34 +170,34 @@ Lines   total/split/joined/realigned/skipped:	9943613/0/0/0/0
 
 ## 3. PLINK to make .ped and .map files
 
-This worked and the number of SNPs are replaced. I renamed it because I messed that up. Now trying plink again!
+Now jumping into plink. Working is a whole new folder because I don't want to lose anything from the older one. new_input_files
 
 ```{}
-(bioinf) [ericacnr@colostate.edu@login12 impute]$ conda activate GWAS
-(GWAS) [ericacnr@colostate.edu@login12 impute]$ plink --vcf GCRF_merged_impute4.1.sort.rm_dup.vcf --aec --recode --out ../input_files/GCRF_base_file
+$conda activate GWAS2
+$plink --vcf GCRF.mkdp0_merged_25missing_min.5max.95_depth4_vqsr_gl_impute4.1.vcf.gz --aec --recode --out ../new_input_files/base_files
 PLINK v1.90b6.21 64-bit (19 Oct 2020)          www.cog-genomics.org/plink/1.9/
 (C) 2005-2020 Shaun Purcell, Christopher Chang   GNU General Public License v3
-Logging to ../input_files/GCRF_base_file.log.
+Logging to ../new_input_files/base_files.log.
 Options in effect:
   --allow-extra-chr
-  --out ../input_files/GCRF_base_file
+  --out ../new_input_files/base_files
   --recode
-  --vcf GCRF_merged_impute4.1.sort.rm_dup.vcf
+  --vcf GCRF.mkdp0_merged_25missing_min.5max.95_depth4_vqsr_gl_impute4.1.vcf.gz
 
 15884 MB RAM detected; reserving 7942 MB for main workspace.
---vcf: ../input_files/GCRF_base_file-temporary.bed +
-../input_files/GCRF_base_file-temporary.bim +
-../input_files/GCRF_base_file-temporary.fam written.
-7942760 variants loaded from .bim file.
+--vcf: ../new_input_files/base_files-temporary.bed +
+../new_input_files/base_files-temporary.bim +
+../new_input_files/base_files-temporary.fam written.
+7487128 variants loaded from .bim file.
 89 people (0 males, 0 females, 89 ambiguous) loaded from .fam.
-Ambiguous sex IDs written to ../input_files/GCRF_base_file.nosex .
+Ambiguous sex IDs written to ../new_input_files/base_files.nosex .
 Using 1 thread (no multithreaded calculations invoked).
 Before main variant filters, 89 founders and 0 nonfounders present.
 Calculating allele frequencies... done.
-7942760 variants and 89 people pass filters and QC.
+7487128 variants and 89 people pass filters and QC.
 Note: No phenotypes present.
---recode ped to ../input_files/GCRF_base_file.ped +
-../input_files/GCRF_base_file.map ... done.
+--recode ped to ../new_input_files/base_files.ped +
+../new_input_files/base_files.map ... done.
 ```
 
 ## 4. Fixing the .map files and the .ped files to have morphology
@@ -152,32 +205,38 @@ Note: No phenotypes present.
 Fixing the .map file so that the SNP name is the scaffold and the position together. This file shows the chromosome and SNP location for each SNP.
 
 ```{}
-(GWAS) [ericacnr@colostate.edu@login12 impute]$ cd ../input_files/
-(GWAS) [ericacnr@colostate.edu@login12 input_files]$ cat GCRF_base_file.map | head
-Scaffold_1__1_contigs__length_151072562	.	0	91
-Scaffold_1__1_contigs__length_151072562	.	0	303
-Scaffold_1__1_contigs__length_151072562	.	0	323
-Scaffold_1__1_contigs__length_151072562	.	0	348
-Scaffold_1__1_contigs__length_151072562	.	0	460
-Scaffold_1__1_contigs__length_151072562	.	0	473
-Scaffold_1__1_contigs__length_151072562	.	0	520
+$ cd ../new_input_files/
+$ cat base_files.map | head
 Scaffold_1__1_contigs__length_151072562	.	0	751
-Scaffold_1__1_contigs__length_151072562	.	0	821
-Scaffold_1__1_contigs__length_151072562	.	0	1271
-(GWAS) [ericacnr@colostate.edu@login12 input_files]$ cat GCRF_base_file.map | awk '{print$1"\t"$1"."$4"\t"$3"\t"$4}' > GCRF_base_file.map_loc.map
-(GWAS) [ericacnr@colostate.edu@login12 input_files]$ cat GCRF_base_file.map_loc.map | head
-Scaffold_1__1_contigs__length_151072562	Scaffold_1__1_contigs__length_151072562.91	0	91
-Scaffold_1__1_contigs__length_151072562	Scaffold_1__1_contigs__length_151072562.303	0	303
-Scaffold_1__1_contigs__length_151072562	Scaffold_1__1_contigs__length_151072562.323	0	323
-Scaffold_1__1_contigs__length_151072562	Scaffold_1__1_contigs__length_151072562.348	0	348
-Scaffold_1__1_contigs__length_151072562	Scaffold_1__1_contigs__length_151072562.460	0	460
-Scaffold_1__1_contigs__length_151072562	Scaffold_1__1_contigs__length_151072562.473	0	473
-Scaffold_1__1_contigs__length_151072562	Scaffold_1__1_contigs__length_151072562.520	0	520
+Scaffold_1__1_contigs__length_151072562	.	0	2701
+Scaffold_1__1_contigs__length_151072562	.	0	3064
+Scaffold_1__1_contigs__length_151072562	.	0	4683
+Scaffold_1__1_contigs__length_151072562	.	0	4696
+Scaffold_1__1_contigs__length_151072562	.	0	5001
+Scaffold_1__1_contigs__length_151072562	.	0	5009
+
+$ cat base_files.map | awk '{print$1"\t"$1"."$4"\t"$3"\t"$4}' > GCRF_base_file.map_loc.map
+$ cat GCRF_base_file.map_loc.map | head
 Scaffold_1__1_contigs__length_151072562	Scaffold_1__1_contigs__length_151072562.751	0	751
-Scaffold_1__1_contigs__length_151072562	Scaffold_1__1_contigs__length_151072562.821	0	821
-Scaffold_1__1_contigs__length_151072562	Scaffold_1__1_contigs__length_151072562.1271	0	1271
+Scaffold_1__1_contigs__length_151072562	Scaffold_1__1_contigs__length_151072562.2701	0	2701
+Scaffold_1__1_contigs__length_151072562	Scaffold_1__1_contigs__length_151072562.3064	0	3064
+Scaffold_1__1_contigs__length_151072562	Scaffold_1__1_contigs__length_151072562.4683	0	4683
+Scaffold_1__1_contigs__length_151072562	Scaffold_1__1_contigs__length_151072562.4696	0	4696
+Scaffold_1__1_contigs__length_151072562	Scaffold_1__1_contigs__length_151072562.5001	0	5001
+Scaffold_1__1_contigs__length_151072562	Scaffold_1__1_contigs__length_151072562.5009	0	5009
 ```
 
+Now I'm going to make a separate file for the genotype information from the .ped file for downstream stuff
+
+```{}
+cut -f7- GCRF_base_file_fin.ped > GCRF_base_file_genotypes.txt
+awk '{print NF; exit}' GCRF_base_file_genotypes.txt
+14974256
+```
+
+great!
+
+#### don't end up needing to fix the .ped file or plug these base files directly into plink because I will rather be making a new .ped file for each morphology and running plink of that and the proper .map file to make my GWAS inputs.
 The .ped file is the FID, IID, (other stuff 3-5), phenotype data, genotypes. I need to replace the first column in the .ped file to have the FID be the location. So the plan for this is to make a separate .txt file in R with the location and the sample names, then add it to the original ped file to replace the first two columns.
 
 According to Marina: "In your ped file, this means the first columns should be all "1"s, the second column should be your sample ID, then 3 columns which are usually "0"s, and finally, the 6th column is your phenotype column"
@@ -212,15 +271,18 @@ Alright, I moved the .txt file into the folder with the other input files. Now I
 #removing the " from the file
 sed 's/"//g' locID_num.txt > locID_num_clean.txt
 #adding the locID to the .ped file as the first two columns
-paste locID_num_clean.txt GCRF_base_file.ped > GCRF_intermed.ped
+paste locID_num_clean.txt base_files.ped > GCRF_intermed.ped
 #reformatting the file so it's the first two columns from the locID file and the rest are from the original file, this takes a while
-cat GCRF_intermed.ped | awk 'BEGIN {OFS="\t"} {printf "%s\t%s\t%s", $1, $2, $5; for (i=6; i<=15885534; i++) printf "\t%s", $i; print ""}' > GCRF_base_file_fin.ped
+cat GCRF_intermed.ped | awk 'BEGIN {OFS="\t"} {printf "%s\t%s\t%s", $1, $2, $5; for (i=6; i<=14974264; i++) printf "\t%s", $i; print ""}' > GCRF_base_file_fin.ped
+#14974264 is the number of rows in the intermed file, so it's saying take just the 1st, 2nd, and 5th columns and then everything else (all the genotypes)
 #checking that it went correctly (-S command keeps it from wrapping, so it can show the full line without going crazy and feeding out all the genotypes onto the screen)
 less -S GCRF_base_file_fin.ped
 #checking that it has the correct number of columns, looks good!
 awk '{print NF; exit}' GCRF_base_file_fin.ped
->15885526
+>14974262
 ```
+
+
 
 ## 5. PLINK for .bim .bam .fam files
 Okay so now that the .map file and .ped file are (hopefully) correctly formatted, I'm going to try and run plink to get the files I need to input into the GEMMA program.
@@ -228,7 +290,7 @@ Okay so now that the .map file and .ped file are (hopefully) correctly formatted
 So I'm going to use these base files without the morphology to make base .bim .bam and .fam files. I think I can then edit the .fam file to have the phenotypes information since I haven't been able to get plink's --pheno options to work in the past.
 
 ```{}
-plink --ped GCRF_base_file_fin.ped --map GCRF_base_file_loc.map --out GCRF_base_file --make-bed --aec --allow-no-sex
+plink --ped GCRF_base_file_fin.ped --map GCRF_base_file.map_loc.map --out GCRF_base_file --make-bed --aec --allow-no-sex
 ```
 Awesome, now I have these files:
 
@@ -279,7 +341,7 @@ sed 's/"//g' GCRF_bill_morpho.txt > GCRF_bill_morpho_clean.txt
 ```
 
 # RUNNING THE GWAS
-## 6. Relatedness Matrix
+## DOING THIS FOR EACH TRAIT SEPARATELY 6. Relatedness Matrix
 
 First step is to create a relatedness matrix that can be used for all of the following GWAS analyses.
 
@@ -294,7 +356,7 @@ Seems like this might be because the phenotype file doesn't have anything.
 
 So I just copies the relatedness matrix from the bill_length stuff from earlier.
 
-## 7. MLMM models
+## SKIPPING THESE 7. MLMM models
 So Marina got eigen values first and included those in the mlmm so I'm going to do that also.
 
 ```{}
@@ -391,7 +453,7 @@ What I can do for the feather stuff at least is to run a PCA with the feather mo
 
 This whole first part is just to get the site ID information arranged correctly so I can plug it into the feather data more easily. Just ripped from the GCRF_lms.rmd file.
 ```{r}
-morpho <- read.csv("~/Desktop/GCRF/R data/GCRF_morphology.csv")
+morpho <- read.csv("~/Desktop/GCRF/GCRF-Present/R data/GCRF_morphology.csv")
 morpho <- morpho[1:189,]
 
 morpho_num <- as.data.frame(cbind(as.numeric(morpho$wing), as.numeric(morpho$tarsus), as.numeric(morpho$weight), as.numeric(morpho$tail_length), as.numeric(morpho$nare_length), as.numeric(morpho$bristle_length), as.numeric(morpho$beak_depth), as.numeric(morpho$beak_width), as.numeric(morpho$nare_end_length), as.numeric(morpho$culmen_end_length)))
@@ -402,8 +464,9 @@ colnames(morpho2) <- c("BGP_ID", "site", "wing", "tarsus", "weight", "tail_lengt
 
 morpho_avg <- morpho2 %>% group_by(BGP_ID, site) %>% reframe(wing=mean(wing), tarsus=mean(tarsus), weight=mean(weight), tail_length=mean(tail_length), nare_length=mean(nare_length), bristle_length=mean(bristle_length), beak_depth=(beak_depth), beak_width=mean(beak_width), nare_end_length=mean(nare_end_length), culmen_end_length=mean(culmen_end_length))
 ```
+
 ```{r}
-feather <- read.csv("~/Desktop/GCRF/R data/GCRF_feather_morpho.csv")
+feather <- read.csv("~/Desktop/GCRF/GCRF-Present/R data/GCRF_feather_morpho.csv")
 site <- data.frame(morpho_avg$site, morpho_avg$BGP_ID, morpho_avg$tarsus)
 colnames(site) <- c("site", "ID", "tarsus")
 
@@ -414,7 +477,6 @@ feather_avg <- merge(feather_avg, site, by="ID")
 feather_avg <- data.frame(feather_avg$ID, feather_avg$site, feather_avg$pen_length, feather_avg$pen_num, feather_avg$plum_length, feather_avg$plum_number, feather_avg$nodes, feather_avg$tarsus)
 colnames(feather_avg) <- c("BGP_ID", "site", "pen_length", "pen_num", "plum_length", "plum_number", "nodes", "tarsus")
 ```
-
 
 ```{r}
 #feather_avg <- feather_avg[!duplicated(feather_avg$ID),]
@@ -453,7 +515,7 @@ fviz_eig(morpho.pca, addlabels = T)
 
 ```{r}
 var <- get_pca_var(morpho.pca)
-head(var$coord)
+var$coord
 
 ```
 
@@ -512,7 +574,6 @@ rownames(feather_PC1) <- NULL
 ```
 
 ```{r}
-
 FID_file <- read.table("~/Desktop/GCRF/GenomicPipeline/locID_num.txt", header = FALSE, sep = " ", na.strings = c("", "NA"))
 #adding columns for the empty values that are normally in the .ped file
 FID_file$V3 <- 0
@@ -525,15 +586,21 @@ write.table(feather.PC_ped_file, file="~/Desktop/GCRF/GenomicPipeline/GWAS input
 
 ```{}
 sed 's/"//g' GCRF_feather_PC.txt > GCRF_feather_PC_clean.txt
-paste GCRF_feather_PC_clean.txt ../GCRF_genotypes.ped > GCRF_feather_PC.ped
+paste GCRF_feather_PC_clean.txt ../GCRF_base_file_genotypes.txt > GCRF_feather_PC.ped
+awk '{print NF; exit}' GCRF_feather_PC.ped
+14974262
+#great! That's the number we want
 
-plink --ped GCRF_feather_PC.ped --map GCRF_base_file_loc.map --out GCRF_feather_PC --make-bed --aec --allow-no-sex 
+plink --ped GCRF_feather_PC.ped --map ../GCRF_base_file.map_loc.map --out GCRF_feather_PC --make-bed --aec --allow-no-sex 
 ```
 
+Generate a relatedness matrix.
+
 ```{}
-/projects/ericacnr@colostate.edu/GEMMA/bin/gemma -bfile GCRF_feather_PC \
-  -gk 1 \ 
-	-o GCRF_relate_PC.cXX.txt \
+acompile
+module load gcc/10.3.0
+module load openmpi
+/projects/ericacnr@colostate.edu/GEMMA/bin/gemma -bfile GCRF_feather_PC -gk 1 -o GCRF_relate_PC.cXX.txt
 ```
 
 ```{}
@@ -548,13 +615,7 @@ GCRF_feather_PC.bslmm.param.txt
 GCRF_feather_PC.bslmm.hyp.txt
 GCRF_feather_PC.bslmm.log.txt
 
-Processed this with GEMMA_bslmm_output_analysis_working.R and got at least two snps that flag as being important.
-
-
-######################################################################################################################################################
-
-First step is making files for every phenotypes...bleh. Lets do beak length, nare length, bristles... wing chord and all the feather morphology. The beak length stuff should already be set up, so let's use that same code to make the other ones.
-
+Processed this with GEMMA_bslmm_output_analysis_bill.R
 
 ### Bill PCA and BSLMM
 Repeating the steps from the feather PCA but with the bill data.
@@ -672,11 +733,12 @@ Moving it over to the cluster...
 
 ```{}
 sed 's/"//g' GCRF_bill_PC.txt > GCRF_bill_PC_clean.txt
-paste GCRF_bill_PC_clean.txt ../GCRF_genotypes.ped > GCRF_bill_PC.ped
+paste GCRF_bill_PC_clean.txt ../GCRF_base_file_genotypes.txt > GCRF_bill_PC.ped
+awk '{print NF; exit}' GCRF_bill_PC.ped
 
-plink --ped GCRF_bill_PC.ped --map GCRF_base_file_loc.map --out GCRF_bill_PC --make-bed --aec --allow-no-sex 
+plink --ped GCRF_bill_PC.ped --map ../GCRF_base_file.map_loc.map --out GCRF_bill_PC --make-bed --aec --allow-no-sex 
 ```
-
+Generate relatedness matrix
 ```{}
 /projects/ericacnr@colostate.edu/GEMMA/bin/gemma -bfile GCRF_bill_PC -gk 1 -o GCRF_relate_PC.cXX.txt
 ```
@@ -693,9 +755,7 @@ GCRF_feather_PC.bslmm.param.txt
 GCRF_feather_PC.bslmm.hyp.txt
 GCRF_feather_PC.bslmm.log.txt
 
-
-
-## nare length
+## misc stuff
 
 
 Running this in a script so it doesn't time out or run out of space. Using one that Marina wrote, again not sure about the -w and -s numbers...
@@ -757,7 +817,11 @@ conda activate GWAS2
 
 
 ## LMM
-Setting up a spreadsheet with all of the morphology separately.
+Setting up a spreadsheet with all of the morphology separately. I am going to run this on the residual results from the linear models to correct for body size...
+
+So here's the thing, I separated the morphology by sex when I did my initial linear regressions, and I found that there wasn't any difference in general slopes or what variables came out as significant (wing chord is the only one for both sexes), so I'm going to go ahead and group everything by sex. Out of caution I'm going to run linear regressions on each variable (not just wing chord) just to cover my bases although I wouldn't say it seems necessary. The annoying thing here is going to be removing NA's for variables that don't have measurements then adding them back in so I can put everything back into a single dataframe for making the .ped files later.
+
+First let's just organize and clean up some stuff.
 ```{r}
 morpho <- read.csv("~/Desktop/GCRF/GCRF-Present/R data/GCRF_morphology.csv", na.strings = c("", "NA"))
 morpho <- morpho[1:189,]
@@ -766,12 +830,124 @@ rownames(morpho) <- NULL
 morpho <- morpho[(48:145),]
 rownames(morpho) <- NULL
 morpho <- morpho[!duplicated(morpho$BGP_ID),]
-morpho <- morpho[c(-15, -18,-35,-66),]
-morpho <- rbind(morpho,
-                c("PIPA", NA, NA, "23N00557", NA, NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA),
-                c("PIPA", NA, NA, "23N00459", NA, NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA))
-rownames(morpho) <- NULL
-morpho <- morpho[order(morpho$BGP_ID), ]
+morpho <- morpho[c(-15, -18),]
+
+morpho <- data.frame(morpho$site, morpho$BGP_ID, morpho$tarsus, morpho$wing, morpho$tail_length, morpho$nare_length, morpho$bristle_length, morpho$beak_depth, morpho$beak_width, morpho$culmen_end_length, col.names=T)
+colnames(morpho) <- c("site", "BGP_ID", "tarsus", "wing", "tail_length", "nare_length", "bristle_length", "beak_depth", "beak_width", "culmen_end_length")
+morpho[morpho == "-"] <- NA
+```
+
+```{r}
+wing <- data.frame(site = morpho$site, BGP_ID = morpho$BGP_ID, wing = as.numeric(morpho$wing),tarsus = as.numeric(morpho$tarsus))
+wing.ID <- wing %>% na.omit() %>% pull(BGP_ID)
+
+tail <- data.frame(site = morpho$site, BGP_ID = morpho$BGP_ID, tail = as.numeric(morpho$tail),tarsus = as.numeric(morpho$tarsus))
+tail.ID <- tail %>% na.omit() %>% pull(BGP_ID)
+
+nare <- data.frame(site = morpho$site, BGP_ID = morpho$BGP_ID, nare = as.numeric(morpho$nare_length),tarsus = as.numeric(morpho$tarsus))
+nare.ID <- nare %>% na.omit() %>% pull(BGP_ID)
+
+bristle_l <- data.frame(site = morpho$site, BGP_ID = morpho$BGP_ID, bristle_length = as.numeric(morpho$bristle_length),tarsus = as.numeric(morpho$tarsus))
+bristle_l.ID <- bristle_l %>% na.omit() %>% pull(BGP_ID)
+
+bill_l <- data.frame(site = morpho$site, BGP_ID = morpho$BGP_ID, bill_length = as.numeric(morpho$culmen_end_length),tarsus = as.numeric(morpho$tarsus))
+bill_l.ID <- bill_l %>% na.omit() %>% pull(BGP_ID)
+
+bill_d <- data.frame(site = morpho$site, BGP_ID = morpho$BGP_ID, bill_depth = as.numeric(morpho$beak_depth),tarsus = as.numeric(morpho$tarsus))
+bill_d.ID <- bill_d %>% na.omit() %>% pull(BGP_ID)
+
+bill_w <- data.frame(site = morpho$site, BGP_ID = morpho$BGP_ID, bill_width = as.numeric(morpho$beak_width),tarsus = as.numeric(morpho$tarsus))
+bill_w.ID <- bill_w %>% na.omit() %>% pull(BGP_ID)
+```
+
+```{r}
+wing.lm <- lm(as.numeric(wing) ~ as.numeric(tarsus), data=wing)
+summary(wing.lm)
+ggplot(wing, aes(x=as.numeric(wing), y=as.numeric(tarsus)))+
+  geom_point()+
+  geom_smooth(method=lm)+
+  theme_classic()
+plot(wing.lm$residuals)
+wing.res <- data.frame(wing.lm$model,wing.lm$residuals,wing.ID)
+colnames(wing.res) <- c("wing", "tarsus", "wing.res", "BGP_ID")
+wing.res.all <- full_join(wing, wing.res, by=c("BGP_ID", "wing", "tarsus"))
+
+tail.lm <- lm(as.numeric(tail) ~ as.numeric(tarsus), data=tail)
+summary(tail.lm)
+ggplot(tail, aes(x=as.numeric(tail), y=as.numeric(tarsus)))+
+  geom_point()+
+  geom_smooth(method=lm)+
+  theme_classic()
+plot(tail.lm$residuals)
+tail.res <- data.frame(tail.lm$model,tail.lm$residuals,tail.ID)
+colnames(tail.res) <- c("tail", "tarsus", "tail.res", "BGP_ID")
+tail.res.all <- full_join(tail, tail.res, by=c("BGP_ID", "tail", "tarsus"))
+
+nare.lm <- lm(as.numeric(nare) ~ as.numeric(tarsus), data=nare)
+summary(nare.lm)
+ggplot(nare, aes(x=as.numeric(tarsus), y=as.numeric(nare)))+
+  geom_point()+
+  geom_smooth(method=lm)+
+  theme_classic()
+plot(nare.lm$residuals)
+nare.res <- data.frame(nare.lm$model,nare.lm$residuals,nare.ID)
+colnames(nare.res) <- c("nare", "tarsus", "nare.res", "BGP_ID")
+nare.res.all <- full_join(nare, nare.res, by=c("BGP_ID", "nare", "tarsus"))
+
+bristle_l.lm <- lm(as.numeric(bristle_length) ~ as.numeric(tarsus), data=bristle_l)
+summary(bristle_l.lm)
+ggplot(bristle_l, aes(x=as.numeric(tarsus), y=as.numeric(bristle_length)))+
+  geom_point()+
+  geom_smooth(method=lm)+
+  theme_classic()
+plot(bristle_l.lm$residuals)
+bristle_l.res <- data.frame(bristle_l.lm$model,bristle_l.lm$residuals,bristle_l.ID)
+colnames(bristle_l.res) <- c("bristle_length", "tarsus", "bristle_l.res", "BGP_ID")
+bristle_l.res.all <- full_join(bristle_l, bristle_l.res, by=c("BGP_ID", "bristle_length", "tarsus"))
+
+bill_l.lm <- lm(as.numeric(bill_length) ~ as.numeric(tarsus), data=bill_l)
+summary(bill_l.lm)
+ggplot(bill_l, aes(x=as.numeric(tarsus), y=as.numeric(bill_length)))+
+  geom_point()+
+  geom_smooth(method=lm)+
+  theme_classic()
+plot(bill_l.lm$residuals)
+bill_l.res <- data.frame(bill_l.lm$model,bill_l.lm$residuals,bill_l.ID)
+colnames(bill_l.res) <- c("bill_length", "tarsus", "bill_l.res", "BGP_ID")
+bill_l.res.all <- full_join(bill_l, bill_l.res, by=c("BGP_ID", "bill_length", "tarsus"))
+
+bill_d.lm <- lm(as.numeric(bill_depth) ~ as.numeric(tarsus), data=bill_d)
+summary(bill_d.lm)
+ggplot(bill_d, aes(x=as.numeric(tarsus), y=as.numeric(bill_depth)))+
+  geom_point()+
+  geom_smooth(method=lm)+
+  theme_classic()
+plot(bill_d.lm$residuals)
+bill_d.res <- data.frame(bill_d.lm$model,bill_d.lm$residuals,bill_d.ID)
+colnames(bill_d.res) <- c("bill_depth", "tarsus", "bill_d.res", "BGP_ID")
+bill_d.res.all <- full_join(bill_d, bill_d.res, by=c("BGP_ID", "bill_depth", "tarsus"))
+
+bill_w.lm <- lm(as.numeric(bill_width) ~ as.numeric(tarsus), data=bill_w)
+summary(bill_w.lm)
+ggplot(bill_w, aes(x=as.numeric(tarsus), y=as.numeric(bill_width)))+
+  geom_point()+
+  geom_smooth(method=lm)+
+  theme_classic()
+plot(bill_w.lm$residuals)
+bill_w.res <- data.frame(bill_w.lm$model,bill_w.lm$residuals,bill_w.ID)
+colnames(bill_w.res) <- c("bill_width", "tarsus", "bill_w.res", "BGP_ID")
+bill_w.res.all <- full_join(bill_w, bill_w.res, by=c("BGP_ID", "bill_width", "tarsus"))
+```
+
+```{r}
+body.residuals <- data.frame(morpho$site, morpho$BGP_ID, wing.res.all$wing.res, tail.res.all$tail.res, nare.res.all$nare.res, bristle_l.res.all$bristle_l.res, bill_l.res.all$bill_l.res, bill_d.res.all$bill_d.res, bill_w.res.all$bill_w.res, morpho$tarsus)
+colnames(body.residuals) <- c("site", "BGP_ID", "wing.res", "tail.res", "nare.res", "bristle_lenght.res", "beak_lenght.res", "beak_depth.res", "beak_width.res", "tarsus")
+write.csv(file="GCRF-Present/GenomicPipeline/GWAS input/GCRF_morphology_residuals.csv", body.residuals, col.names = T, row.names = F)
+```
+
+### This is without the linear regressions
+```{r}
+morpho <- read.csv("~/Desktop/GCRF/GCRF-Present/GenomicPipeline/GWAS input/GCRF_morphology_residuals.csv")
 
 FID_file <- read.table("~/Desktop/GCRF/GCRF-Present/GenomicPipeline/locID_num.txt", header = FALSE, sep = " ", na.strings = c("", "NA"))
 
@@ -779,83 +955,79 @@ FID_file$V3 <- 0
 FID_file$V4 <- 0
 FID_file$V5 <- 0
 #adding the bill_length as the 6th row, skipping tarsus for now
-morpho_ped_file <- data.frame(FID_file, morpho[,c(5:18)])
-write.table(morpho_ped_file, file="~/Desktop/GCRF/GCRF-Present/GenomicPipeline/GWAS input/GCRF_morpho.ped", row.names=F, col.names=F)
+morpho_ped_file <- data.frame(FID_file, morpho[,c(3:10)])
+write.table(morpho_ped_file, file="~/Desktop/GCRF/GCRF-Present/GenomicPipeline/GWAS input/GCRF_morpho_residuals.txt", row.names=F, col.names=F)
 ```
 
 ```{}
-sed 's/"//g' GCRF_morpho.ped > GCRF_morpho_clean.ped
-sed 's/-/NA/g' GCRF_morpho_clean.ped > GCRF_morpho.ped
+sed 's/"//g' GCRF_morpho_residuals.txt > GCRF_morpho_clean.txt
 
-cut -d ' ' -f 1-6 GCRF_morpho.ped > wing
-cut -d ' ' -f 1-5,7 GCRF_morpho.ped > tarsus
-cut -d ' ' -f 1-5,10 GCRF_morpho.ped > tail_length
-cut -d ' ' -f 1-5,12 GCRF_morpho.ped > nare_length
-cut -d ' ' -f 1-5,13 GCRF_morpho.ped > bristle_length
-cut -d ' ' -f 1-5,14 GCRF_morpho.ped > beak_depth
-cut -d ' ' -f 1-5,15 GCRF_morpho.ped > beak_width
-cut -d ' ' -f 1-5,19 GCRF_morpho.ped > culmen_end_length
+cut -d ' ' -f 1-6 GCRF_morpho_clean.txt > wing
+cut -d ' ' -f 1-5,13 GCRF_morpho_clean.txt > tarsus
+cut -d ' ' -f 1-5,7 GCRF_morpho_clean.txt > tail_length
+cut -d ' ' -f 1-5,8 GCRF_morpho_clean.txt > nare_length
+cut -d ' ' -f 1-5,9 GCRF_morpho_clean.txt > bristle_length
+cut -d ' ' -f 1-5,11 GCRF_morpho_clean.txt > beak_depth
+cut -d ' ' -f 1-5,12 GCRF_morpho_clean.txt > beak_width
+cut -d ' ' -f 1-5,10 GCRF_morpho_clean.txt > culmen_end_length
 
-paste wing ../GCRF_genotypes.ped > wing.ped
-paste tarsus ../GCRF_genotypes.ped > tarsus.ped
-paste tail_length ../GCRF_genotypes.ped > tail_length.ped
-paste nare_length ../GCRF_genotypes.ped > nare_length.ped
-paste bristle_length ../GCRF_genotypes.ped > bristle_length.ped
-paste beak_depth ../GCRF_genotypes.ped > beak_depth.ped
-paste beak_width ../GCRF_genotypes.ped > beak_width.ped
-paste culmen_end_length ../GCRF_genotypes.ped > culmen_end_length.ped
+paste wing ../GCRF_base_file_genotypes.txt > wing.ped
+paste tarsus ../GCRF_base_file_genotypes.txt > tarsus.ped
+paste tail_length ../GCRF_base_file_genotypes.txt > tail_length.ped
+paste nare_length ../GCRF_base_file_genotypes.txt > nare_length.ped
+paste bristle_length ../GCRF_base_file_genotypes.txt > bristle_length.ped
+paste beak_depth ../GCRF_base_file_genotypes.txt > beak_depth.ped
+paste beak_width ../GCRF_base_file_genotypes.txt > beak_width.ped
+paste culmen_end_length ../GCRF_base_file_genotypes.txt > culmen_end_length.ped
+
+#checked column numbers for all of these and everything checks out!
 ```
 
 ```{}
-plink --ped wing_output/wing.ped --map GCRF_base_file_loc.map --out wing_output/wing --make-bed --aec --allow-no-sex
+plink --ped wing.ped --map ../GCRF_base_file.map_loc.map --out wing.d/wing --make-bed --aec --allow-no-sex
 
-plink --ped tarsus_output/tarsus.ped --map GCRF_base_file_loc.map --out tarsus_output/tarsus --make-bed --aec --allow-no-sex
+plink --ped tarsus.ped --map ../GCRF_base_file.map_loc.map --out tarsus.d/tarsus --make-bed --aec --allow-no-sex
 
-plink --ped tail_length_output/tail_length.ped --map GCRF_base_file_loc.map --out tail_length_output/tail_length --make-bed --aec --allow-no-sex
+plink --ped tail_length.ped --map ../GCRF_base_file.map_loc.map --out tail.d/tail_length --make-bed --aec --allow-no-sex
 
-plink --ped nare_length_output/nare_length.ped --map GCRF_base_file_loc.map --out nare_length_output/nare_length --make-bed --aec --allow-no-sex
+plink --ped nare_length.ped --map ../GCRF_base_file.map_loc.map --out nare.d/nare_length --make-bed --aec --allow-no-sex
 
-plink --ped bristle_length_output/bristle_length.ped --map GCRF_base_file_loc.map --out bristle_length_output/bristle_length --make-bed --aec --allow-no-sex
+plink --ped bristle_length.ped --map ../GCRF_base_file.map_loc.map --out bristle.d/bristle_length --make-bed --aec --allow-no-sex
 
-plink --ped beak_depth_output/beak_depth.ped --map GCRF_base_file_loc.map --out beak_depth_output/beak_depth --make-bed --aec --allow-no-sex
+plink --ped beak_depth.ped --map ../GCRF_base_file.map_loc.map --out beak_d.d/beak_depth --make-bed --aec --allow-no-sex
 
-plink --ped beak_width_output/beak_width.ped --map GCRF_base_file_loc.map --out beak_width_output/beak_width --make-bed --aec --allow-no-sex
+plink --ped beak_width.ped --map ../GCRF_base_file.map_loc.map --out beak_w.d/beak_width --make-bed --aec --allow-no-sex
 
-plink --ped culmen_end_length_output/culmen_end_length.ped --map GCRF_base_file_loc.map --out culmen_end_length_output/culmen_end_length --make-bed --aec --allow-no-sex
+plink --ped culmen_end_length.ped --map ../GCRF_base_file.map_loc.map --out culmen.d/culmen_end_length --make-bed --aec --allow-no-sex
 
 ```
 
 ```{}
-/projects/ericacnr@colostate.edu/GEMMA/bin/gemma -bfile wing -k output/relate.cXX.txt.cXX.txt -lmm 1 -o wing_lmm -w 500000 -s 5000000
+/projects/ericacnr@colostate.edu/GEMMA/bin/gemma -bfile wing.d/wing -gk 1 -o relate
+#just creating one relatedness matrix for this folder that they can all pull from
+/projects/ericacnr@colostate.edu/GEMMA/bin/gemma -bfile wing -k ../output/relate.cXX.txt -lmm 1 -o wing_lmm -w 500000 -s 5000000
 
-/projects/ericacnr@colostate.edu/GEMMA/bin/gemma -bfile tarsus -gk 1 -o relate
-/projects/ericacnr@colostate.edu/GEMMA/bin/gemma -bfile tarsus -k output/relate.cXX.txt -lmm 1 -o tarsus_lmm -w 500000 -s 5000000
+/projects/ericacnr@colostate.edu/GEMMA/bin/gemma -bfile tarsus -k ../output/relate.cXX.txt -lmm 1 -o tarsus_lmm -w 500000 -s 5000000
 
-/projects/ericacnr@colostate.edu/GEMMA/bin/gemma -bfile tail_length -gk 1 -o relate
-/projects/ericacnr@colostate.edu/GEMMA/bin/gemma -bfile tail_length -k output/relate.cXX.txt -lmm 1 -o tail_length_lmm -w 500000 -s 5000000
+/projects/ericacnr@colostate.edu/GEMMA/bin/gemma -bfile tail_length -k ../output/relate.cXX.txt -lmm 1 -o tail_length_lmm -w 500000 -s 5000000
 
-/projects/ericacnr@colostate.edu/GEMMA/bin/gemma -bfile nare_length -gk 1 -o relate
-/projects/ericacnr@colostate.edu/GEMMA/bin/gemma -bfile nare_length -k output/relate.cXX.txt -lmm 1 -o nare_length_lmm -w 500000 -s 5000000
+/projects/ericacnr@colostate.edu/GEMMA/bin/gemma -bfile nare_length -k ../output/relate.cXX.txt -lmm 1 -o nare_length_lmm -w 500000 -s 5000000
 
-/projects/ericacnr@colostate.edu/GEMMA/bin/gemma -bfile bristle_length -gk 1 -o relate
-/projects/ericacnr@colostate.edu/GEMMA/bin/gemma -bfile bristle_length -k output/relate.cXX.txt -lmm 1 -o bristle_length_lmm -w 500000 -s 5000000
+/projects/ericacnr@colostate.edu/GEMMA/bin/gemma -bfile bristle_length -k ../output/relate.cXX.txt -lmm 1 -o bristle_length_lmm -w 500000 -s 5000000
 
-/projects/ericacnr@colostate.edu/GEMMA/bin/gemma -bfile beak_depth -gk 1 -o relate
-/projects/ericacnr@colostate.edu/GEMMA/bin/gemma -bfile beak_depth -k output/relate.cXX.txt -lmm 1 -o beak_depth_lmm -w 500000 -s 5000000
+/projects/ericacnr@colostate.edu/GEMMA/bin/gemma -bfile beak_depth -k ../output/relate.cXX.txt -lmm 1 -o beak_depth_lmm -w 500000 -s 5000000
 
-/projects/ericacnr@colostate.edu/GEMMA/bin/gemma -bfile beak_width -gk 1 -o relate
-/projects/ericacnr@colostate.edu/GEMMA/bin/gemma -bfile beak_width -k output/relate.cXX.txt -lmm 1 -o beak_width_lmm -w 500000 -s 5000000
+/projects/ericacnr@colostate.edu/GEMMA/bin/gemma -bfile beak_width -k ../output/relate.cXX.txt -lmm 1 -o beak_width_lmm -w 500000 -s 5000000
 
-/projects/ericacnr@colostate.edu/GEMMA/bin/gemma -bfile culmen_end_length -gk 1 -o relate
-/projects/ericacnr@colostate.edu/GEMMA/bin/gemma -bfile culmen_end_length -k output/relate.cXX.txt -lmm 1 -o culmen_end_length_lmm -w 500000 -s 5000000
+/projects/ericacnr@colostate.edu/GEMMA/bin/gemma -bfile culmen_end_length -k ../output/relate.cXX.txt -lmm 1 -o culmen_end_length_lmm -w 500000 -s 5000000
 ```
-
-
 
 # GETTING ALLELE FREQUENCIES FOR THE FLAGGED SNPS
 
 ## BSLMM SNPs
-So with filtering using the bslmm output for feathers and bills, I was able to identify some relevant SNPS.
+So with filtering using the bslmm output for feathers and bills, I was able to identify some relevant SNPS. With the first iteration I got a lot of stuff flagging as relevant. The second (correct) iteration, not as much.
+
+### first iteration
 For the bill morphology: (above a .1 threshold for PIP values, per Chaves 2016).
 chr	rs	ps	n_miss	alpha	beta	gamma	eff
 Scaffold_2__1_contigs__length_114774641	Scaffold_2__1_contigs__length_114774641.41203916	41203916	0	-6.108376e-06	-0.8424626	0.114384	0.0963642420384
@@ -865,6 +1037,31 @@ chr	rs	ps	n_miss	alpha	beta	gamma	eff
 Scaffold_28__1_contigs__length_11240829	Scaffold_28__1_contigs__length_11240829.4798538	4798538	0	-3.014029e-06	-1.487668	0.389188	0.578982533584
 Scaffold_1__1_contigs__length_151072562	Scaffold_1__1_contigs__length_151072562.91081692	91081692	0	-2.156909e-06	-1.643631	0.25956	0.42662086236
 Scaffold_18__1_contigs__length_25274884	Scaffold_18__1_contigs__length_25274884.2074884	2074884	0	2.328089e-06	0.9979339	0.23866	0.238166904574
+
+### second iteration
+feather PC bslmm:
+Threshold of 0.01 which is typical but not quite as cool.
+ZFCHROM	ZFPOS	CHROM	mean.loc	sca.ori	length	rs	POS	n_miss	alpha	beta	gamma
+6	10477013	Scaffold_8__1_contigs__length_35685229	18106371.1019173	-1	35685229	*Scaffold_8__1_contigs__length_35685229.25471973*	25471973	0	-3.820215e-06	-1.778742	0.039932
+1.1	61341218	Scaffold_6__1_contigs__length_71876329	37081312.5403133	1	71876329	*Scaffold_6__1_contigs__length_71876329.60198070*	60198070	0	1.661721e-06	1.221628	0.03012
+1	24356364	Scaffold_2__1_contigs__length_114774641	59305973.9656377	-1	114774641	*Scaffold_2__1_contigs__length_114774641.92336930*	92336930	0	-3.689599e-06	-1.475477	0.024338
+4	5065576	Scaffold_5__1_contigs__length_71959612	34675573.4638522	-1	71959612	*Scaffold_5__1_contigs__length_71959612.65589803*	65589803	0	-5.10239e-06	-1.161962	0.022772
+2	93419280	Scaffold_1__1_contigs__length_151072562	40329379.5914754	1	151072562	*Scaffold_1__1_contigs__length_151072562.128626182*	128626182	0	-2.930171e-06	-1.766972	0.02032
+2	111387037	Scaffold_1__1_contigs__length_151072562	40329379.5914754	1	151072562	*Scaffold_1__1_contigs__length_151072562.146593939*	146593939	0	2.650819e-06	1.039644	0.017154
+1	36058968	Scaffold_2__1_contigs__length_114774641	59305973.9656377	-1	114774641	*Scaffold_2__1_contigs__length_114774641.80634326*	80634326	0	-3.089245e-06	-1.881733	0.011898
+3	514041	Scaffold_3__1_contigs__length_112408489	56640462.8173333	-1	112408489	*Scaffold_3__1_contigs__length_112408489.112330666*	112330666	0	-2.940688e-06	-1.968629	0.010818
+
+for the bill PC bslmm, with the same threshold. 
+ZFCHROM	ZFPOS	CHROM	mean.loc	sca.ori	length	rs	POS	n_miss	alpha	beta	gamma	eff
+2	18925575	Scaffold_1__1_contigs__length_151072562	40329379.5914754	1	151072562	*Scaffold_1__1_contigs__length_151072562.54132477*	54132477	0	-5.036987e-06	-1.285083	0.093498	0.120152690334
+5	31292946	Scaffold_7__1_contigs__length_62267870	30554770.2958274	1	62267870	*Scaffold_7__1_contigs__length_62267870.31872111*	31872111	0	-3.124287e-06	-0.9874937	0.014814	0.0146287316718
+1	31504261	Scaffold_2__1_contigs__length_114774641	59305973.9656377	-1	114774641	*Scaffold_2__1_contigs__length_114774641.85189033*	85189033	0	-4.471717e-06	-0.5889336	0.012078	0.0071131400208
+13	840405	Scaffold_23__1_contigs__length_18116493	8513441.31332796	1	18116493	*Scaffold_23__1_contigs__length_18116493.1385210*	1385210	0	-2.590394e-06	-1.239186	0.011302	0.014005280172
+2	103663091	Scaffold_1__1_contigs__length_151072562	40329379.5914754	1	151072562	*Scaffold_1__1_contigs__length_151072562.138869993*	138869993	0	-3.084669e-06	-0.5464172	0.011268	0.0061570290096
+1	13464638	Scaffold_2__1_contigs__length_114774641	59305973.9656377	-1	114774641	*Scaffold_2__1_contigs__length_114774641.103228656*	103228656	0	-3.151422e-06	-0.3542868	0.01125	0.0039857265
+2	72985722	Scaffold_1__1_contigs__length_151072562	40329379.5914754	1	151072562	*Scaffold_1__1_contigs__length_151072562.108192624*	108192624	0	-3.304588e-06	-0.9396421	0.011168	0.0104939229728
+13	1905123	Scaffold_23__1_contigs__length_18116493	8513441.31332796	1	18116493	*Scaffold_23__1_contigs__length_18116493.2449928*	2449928	0	3.487147e-06	0.4015281	0.010922	0.0043854899082
+4	56410849	Scaffold_5__1_contigs__length_71959612	34675573.4638522	-1	71959612	*Scaffold_5__1_contigs__length_71959612.14244530*	14244530	0	1.907588e-06	0.6763174	0.01029	0.006959306046
 
 So the goal now is to use plink to pull out these specific snps, get recode the alleles to 0 (homozygous reference), 1 (heterozygous), and 2 (homozygous alternative) for each individual. The idea then is to run a regression with those categorical variables again the continuous bill of feather PC values and see if there's a relationship.
 
@@ -876,40 +1073,43 @@ Scaffold_292__1_contigs__length_11690	8856	.	A	G	.	PASS	.	GT	1|1	0|0	0|0	0|0	0|1
 ### Using PLINK to extract the values
 So the names are all there, just gotta figure out the right command for plink...
 
-We'll start with code the CH helped me with. We'll start with the bill SNP.
-
 ```{}
-conda activate GWAS2
-plink --vcf GCRF_merged_impute4.1.sort.rm_dup.vcf --out Scaffold_2__1_contigs__length_114774641.41203916.bill --aec --recodeA --snp Scaffold_2__1_contigs__length_114774641.41203916
-```
-
-As I expected, it couldn't fine it. So I'm going to try and use another approach...
-
-
-```{}
-plink --vcf ../impute/GCRF_merged_impute4.1.sort.rm_dup.vcf --aec --recode --out allele_freq
+plink --vcf ../impute_new/GCRF.mkdp0_merged_25missing_min.5max.95_depth4_vqsr_gl_impute4.1.vcf.gz --aec --recode --out allele_freq
 
 cat allele_freq.map | awk '{print$1"\t"$1"."$4"\t"$3"\t"$4}' > allele_freq_loc.map
 mv allele_freq_loc.map allele_freq.map
 
 plink --ped allele_freq.ped --map allele_freq.map --out allele_freq --make-bed --aec --allow-no-sex
 
-plink --bfile allele_freq --snp Scaffold_2__1_contigs__length_114774641.41203916 --aec --recodeA --out snps/Scaffold_2__1_contigs__length_114774641.41203916.bill
+plink --bfile allele_freq --snp Scaffold_1__1_contigs__length_151072562.54132477 --aec --recodeA --out snps/Scaffold_1__1_contigs__length_151072562.54132477.bill
 ```
 
-That worked!! I now have a .fam file that has the info on the genotype! So I can import that here, merge it with the phenotype info and there ya go. Sick. So I'm just gonna do that again real quick with the feather SNPs...
+That worked!! I now have a .fam (.raw) file that has the info on the genotype! So I can import that here, merge it with the phenotype info and there ya go. Sick. So I'm just gonna do that again real quick with the other bill SNPs...
 
 ```{}
-plink --bfile allele_freq --snp Scaffold_28__1_contigs__length_11240829.4798538 --aec --recodeA --out snps/Scaffold_28__1_contigs__length_11240829.4798538.feather
+plink --bfile allele_freq --snp Scaffold_7__1_contigs__length_62267870.31872111 --aec --recodeA --out snps/Scaffold_7__1_contigs__length_62267870.31872111.bill
+plink --bfile allele_freq --snp Scaffold_2__1_contigs__length_114774641.85189033 --aec --recodeA --out snps/Scaffold_2__1_contigs__length_114774641.85189033.bill
+plink --bfile allele_freq --snp Scaffold_23__1_contigs__length_18116493.1385210 --aec --recodeA --out snps/Scaffold_23__1_contigs__length_18116493.1385210.bill
+plink --bfile allele_freq --snp Scaffold_1__1_contigs__length_151072562.138869993 --aec --recodeA --out snps/Scaffold_1__1_contigs__length_151072562.138869993.bill
+plink --bfile allele_freq --snp Scaffold_2__1_contigs__length_114774641.103228656 --aec --recodeA --out snps/Scaffold_2__1_contigs__length_114774641.103228656.bill
+plink --bfile allele_freq --snp Scaffold_1__1_contigs__length_151072562.108192624 --aec --recodeA --out snps/Scaffold_1__1_contigs__length_151072562.108192624.bill
+plink --bfile allele_freq --snp Scaffold_23__1_contigs__length_18116493.2449928 --aec --recodeA --out snps/Scaffold_23__1_contigs__length_18116493.2449928.bill
+plink --bfile allele_freq --snp Scaffold_5__1_contigs__length_71959612.14244530 --aec --recodeA --out snps/Scaffold_5__1_contigs__length_71959612.14244530.bill
+```
+And the feather SNPs
 
-plink --bfile allele_freq --snp Scaffold_1__1_contigs__length_151072562.91081692 --aec --recodeA --out snps/Scaffold_1__1_contigs__length_151072562.91081692.feather
-
-plink --bfile allele_freq --snp Scaffold_18__1_contigs__length_25274884.2074884 --aec --recodeA --out snps/Scaffold_18__1_contigs__length_25274884.2074884.feather
-
+```{}
+plink --bfile allele_freq --snp Scaffold_8__1_contigs__length_35685229.25471973 --aec --recodeA --out snps/Scaffold_8__1_contigs__length_35685229.25471973.feather
+plink --bfile allele_freq --snp Scaffold_6__1_contigs__length_71876329.60198070 --aec --recodeA --out snps/Scaffold_6__1_contigs__length_71876329.60198070.feather
+plink --bfile allele_freq --snp Scaffold_5__1_contigs__length_71959612.65589803 --aec --recodeA --out snps/Scaffold_5__1_contigs__length_71959612.65589803.feather
+plink --bfile allele_freq --snp Scaffold_1__1_contigs__length_151072562.128626182 --aec --recodeA --out snps/Scaffold_1__1_contigs__length_151072562.128626182.feather
+plink --bfile allele_freq --snp Scaffold_1__1_contigs__length_151072562.146593939 --aec --recodeA --out snps/Scaffold_1__1_contigs__length_151072562.146593939.feather
+plink --bfile allele_freq --snp Scaffold_2__1_contigs__length_114774641.80634326 --aec --recodeA --out snps/Scaffold_2__1_contigs__length_114774641.80634326.feather
+plink --bfile allele_freq --snp Scaffold_3__1_contigs__length_112408489.112330666 --aec --recodeA --out snps/Scaffold_3__1_contigs__length_112408489.112330666.2074884.feather
 ```
 
 ### Importing data into R
-
+#### old stuff
 Moving back into R after I moved the files over, going to organizing everything here.
 ```{r}
 feather.PC_ped_file <- read.table("~/Desktop/GCRF/GCRF-Present/GenomicPipeline/GWAS input/GCRF_feather_PC.txt")
@@ -936,8 +1136,44 @@ colnames(S2.1.41203916.bill) <- c("FID", "IID", "PAT", "MAT", "SEX", "PHENOTYPE"
 
 ```
 
-### Running and plotting linear regressions
+#### new stuff
+Taking advantage of this setback by putting everything into for loops.
+```{r, getting data set up}
+feather_file_names <- list.files(path="GCRF-Present/GenomicPipeline/data/allele_freq/", pattern = ".feather.raw$", full.names = TRUE)
+  feather_data_list <- lapply(feather_file_names, function(file) {
+  read.table(file, header = TRUE, sep = " ")
+})
+bill_file_names <- list.files(path="GCRF-Present/GenomicPipeline/data/allele_freq", pattern = ".bill.raw$", full.names = TRUE)
+bill_data_list <- lapply(bill_file_names, function(file) {
+  read.table(file, header = TRUE, sep = " ")
+})
 
+feather.PC_ped_file <- read.table("~/Desktop/GCRF/GCRF-Present/GenomicPipeline/GWAS input/GCRF_feather_PC.txt")
+colnames(feather.PC_ped_file) <- c("FID", "IID", "PAT", "MAT", "SEX", "PHENOTYPE")
+bill.PC_ped_file <- read.table("~/Desktop/GCRF/GCRF-Present/GenomicPipeline/GWAS input/GCRF_bill_PC.txt")
+colnames(bill.PC_ped_file) <- c("FID", "IID", "PAT", "MAT", "SEX", "PHENOTYPE")
+
+feather_ped_files <- list()
+for (i in seq_along(feather_data_list)){
+  df <- feather_data_list[[i]]
+  col_name <- colnames(df)[7]
+  ped_file <- data.frame(feather.PC_ped_file, df[,7])
+  colnames(ped_file) <- c("FID", "IID", "PAT", "MAT", "SEX", "PHENOTYPE", "GENOTYPE")
+  feather_ped_files[[col_name]] <- ped_file
+}
+
+bill_ped_files <- list()
+for (i in seq_along(bill_data_list)){
+  df <- bill_data_list[[i]]
+  col_name <- colnames(df)[7]
+  ped_file <- data.frame(bill.PC_ped_file, df[,7])
+  colnames(ped_file) <- c("FID", "IID", "PAT", "MAT", "SEX", "PHENOTYPE", "GENOTYPE")
+  bill_ped_files[[col_name]] <- ped_file
+}
+```
+
+### Running and plotting linear regressions
+#### old stuff
 Going to try running these in a linear regression, there are some NA values that might throw errors...
 
 ```{r, S1.1.91081692}
@@ -1048,7 +1284,79 @@ ggsave("S2.41203916.png", plot=S2.41203916, path = "~/Desktop/GCRF/GenomicPipeli
 ```
 
 
+#### new stuff
+
+```{r, linear models}
+feather.results_list <- list()
+feather.p_values <- data.frame(snp=character(), p_value=numeric())
+for (i in seq_along(feather_ped_files)){
+  model <- lm(PHENOTYPE~GENOTYPE, data=feather_ped_files[[i]])
+  summary_model <- summary(model)
+  snp_name <- names(feather_ped_files[i])
+  p_value <- summary_model$coefficients["GENOTYPE", "Pr(>|t|)"]
+  feather.p_values <- rbind(feather.p_values, data.frame(snp_name ,p_value))
+  df.no.na <- na.omit(feather_ped_files[[i]])
+  
+  df.results <- data.frame(FID=as.factor(df.no.na$FID), GENOTYPE=as.numeric(df.no.na$GENOTYPE), PHENOTYPE=as.numeric(df.no.na$PHENOTYPE))
+  df.results$predicted <- predict(model)
+  feather.results_list[[snp_name]] <- df.results
+}
+
+bill.results_list <- list()
+bill.p_values <- data.frame(snp=character(), p_value=numeric())
+for (i in seq_along(bill_ped_files)){
+  model <- lm(PHENOTYPE~GENOTYPE, data=bill_ped_files[[i]])
+  summary_model <- summary(model)
+  p_value <- summary_model$coefficients["GENOTYPE", "Pr(>|t|)"]
+  snp_name <- names(bill_ped_files[i])
+  bill.p_values <- rbind(bill.p_values, data.frame(snp_name,p_value))
+  df.no.na <- na.omit(bill_ped_files[[i]])
+  
+  df.results <- data.frame(FID=as.factor(df.no.na$FID), GENOTYPE=as.numeric(df.no.na$GENOTYPE), PHENOTYPE=as.numeric(df.no.na$PHENOTYPE))
+  df.results$predicted <- predict(model)
+  bill.results_list[[snp_name]] <- df.results
+}
+```
+
+```{r, plotting}
+for(i in seq_along(feather.results_list)){
+  y_breaks <- pretty(range(feather.results_list[[i]]$PHENOTYPE), n=5)
+  x_breaks <- seq(min(feather.results_list[[i]]$GENOTYPE), max(feather.results_list[[i]]$GENOTYPE), length.out = 3)
+  group_colors <- c("1" = "lightblue3", "2" = "tomato2")
+
+  plot <- ggplot(feather.results_list[[i]], aes(x = GENOTYPE, y = PHENOTYPE, color = FID)) +
+    geom_point() +   # Add data points with color aesthetic
+    geom_smooth(method = "lm", se = TRUE, color = "grey3") +  # Add smoothed trend line with confidence intervals
+    labs(x = "Genotype", y = "Feather Morphology PC1") +  # Add axis labels
+    scale_y_continuous(breaks = y_breaks) +
+    scale_x_continuous(breaks = x_breaks, labels = c("homozygous reference", "heterozygous", "homozygous alternative")) +
+    scale_color_manual(labels = c("WMNT", "PIPA"), values=group_colors) +  # Customize legend labels
+    theme_classic()
+  snp_name <- names(feather.results_list[i])
+  plot_name <- paste0(snp_name, "feather.png")
+  ggsave(plot_name, plot=plot, path = "~/Desktop/GCRF/GCRF-Present/GenomicPipeline/data/allele_freq", width=9, height=7)
+}
+
+for(i in seq_along(bill.results_list)){
+  y_breaks <- pretty(range(bill.results_list[[i]]$PHENOTYPE), n=5)
+  x_breaks <- seq(min(bill.results_list[[i]]$GENOTYPE), max(bill.results_list[[i]]$GENOTYPE), length.out = 3)
+  group_colors <- c("1" = "lightblue3", "2" = "tomato2")
+
+  plot <- ggplot(bill.results_list[[i]], aes(x = GENOTYPE, y = PHENOTYPE, color = FID)) +
+    geom_point() +   # Add data points with color aesthetic
+    geom_smooth(method = "lm", se = TRUE, color = "grey3") +  # Add smoothed trend line with confidence intervals
+    labs(x = "Genotype", y = "Bill Morphology PC1") +  # Add axis labels
+    scale_y_continuous(breaks = y_breaks) +
+    scale_x_continuous(breaks = x_breaks, labels = c("homozygous reference", "heterozygous", "homozygous alternative")) +
+    scale_color_manual(labels = c("WMNT", "PIPA"), values=group_colors) +  # Customize legend labels
+    theme_classic()
+  snp_name <- names(bill.results_list[i])
+  plot_name <- paste0(snp_name, "bill.png")
+  ggsave(plot_name, plot=plot, path = "~/Desktop/GCRF/GCRF-Present/GenomicPipeline/data/allele_freq", width=9, height=7)
+}
+```
 ## LMM SNPs
+### old stuff
 So I ran some LMM's on all of the morphological traits separately, and got some interesting results. I ran them first with a Bonferonii correction (0.05/7900000). I then also ran it with the widely accept 5e-8 significant threshold.
 
 Here's what I got:
@@ -1075,7 +1383,7 @@ Scaffold_2__1_contigs__length_114774641.86583423 C>T
 
 So I'm going to use the same plink command and pull out a new VCF file.
 
-### Extracting with PLINK
+#### Extracting with PLINK
 ```{}
 plink --bfile allele_freq --snp Scaffold_6__1_contigs__length_71876329.70598544 --aec --recodeA --out snps/Scaffold_6__1_contigs__length_71876329.70598544.nare_length
 
@@ -1088,7 +1396,7 @@ plink --bfile allele_freq --snp Scaffold_2__1_contigs__length_114774641.86583423
 ```
 
 
-### Importing everything into R
+#### Importing everything into R
 Moving stuff over from the cluster
 
 ```{r}
@@ -1226,7 +1534,7 @@ S2.86583423 <- ggplot(S2.width.results, aes(x = GENOTYPE, y = PHENOTYPE, color =
 ggsave("S2.86583423.png", plot=S2.86583423  , path = "~/Desktop/GCRF/GCRF-Present/GenomicPipeline/data/allele_freq", width=9, height=7)
 ```
 
-## Investigating SNP S28.4798539.feather
+#### Investigating SNP S28.4798539.feather
 
 This one (Scaffold_28__1_contigs__length_11240829.4798538) is only showing on individual as a heterozygote. I'm going to investigate a bit deeper to see how well we can trust the calling on this to see if this is real, also if this was an imputed SNP or not.
 
@@ -1363,3 +1671,339 @@ summary(S28.feather_quad)
 #Multiple R-squared:  0.4278,	Adjusted R-squared:  0.4123 
 #F-statistic: 27.66 on 2 and 74 DF,  p-value: 1.072e-09
 ```
+
+### new stuff
+So I ran some LMM's on all of the morphological traits separately (on the residuals from the tarsus regression to correct for body size), and got some interesting results. I ran them first with a Bonferonii correction (0.05/7500000). I then also ran it with the widely accept 5e-8 significant threshold.
+
+Here's what I got:
+TAIL LENGTH 1 SNP @<6.88e-9 1 SNP @5e-8
+Scaffold_22__1_contigs__length_19532606.14845898 C    T   4.360509e-09
+CULMEN-END LENGTH 0 SNP @<6.88e-9 1 SNP @5e-8
+Scaffold_1__1_contigs__length_151072562.39837818 G    A   4.635984e-08
+
+So I'm going to use the same plink command and pull out a new VCF file.
+
+#### Extracting with PLINK
+```{}
+plink --bfile allele_freq --snp Scaffold_22__1_contigs__length_19532606.14845898 --aec --recodeA --out snps/Scaffold_22__1_contigs__length_19532606.14845898.lmm
+
+plink --bfile allele_freq --snp Scaffold_1__1_contigs__length_151072562.39837818 --aec --recodeA --out snps/Scaffold_1__1_contigs__length_151072562.39837818.lmm
+
+```
+#### Importing everything into R
+Moving stuff over from the cluster
+
+```{r}
+morpho.ped <- read.table("~/Desktop/GCRF/GCRF-Present/GenomicPipeline/GWAS input/GCRF_morpho_residuals.txt")
+morpho <- data.frame(morpho.ped$V1, morpho.ped$V2, morpho.ped[,7], morpho.ped[,10])
+colnames(morpho) <- c("FID", "BGP_ID", "tail_length", "culmen_end_length")
+
+#Scaffold_22__1_contigs__length_19532606.14845898 tail length
+S22.14845898 <- read.table("~/Desktop/GCRF/GCRF-Present/GenomicPipeline/data/allele_freq/Scaffold_22__1_contigs__length_19532606.14845898.lmm.raw", sep = " ", header = T)
+tail_length <- data.frame(morpho.ped[,1:2], morpho$tail_length, S22.14845898[,7])
+colnames(tail_length) <- c("FID", "IID", "PHENOTYPE", "GENOTYPE")
+
+#Scaffold_1__1_contigs__length_151072562.39837818 beak length
+S1.39837818 <- read.table("~/Desktop/GCRF/GCRF-Present/GenomicPipeline/data/allele_freq/Scaffold_1__1_contigs__length_151072562.39837818.lmm.raw", sep = " ", header = T)
+beak_length <- data.frame(morpho.ped[,1:2], morpho$culmen_end_length, S1.39837818[,7])
+colnames(beak_length) <- c("FID", "IID", "PHENOTYPE", "GENOTYPE")
+```
+
+```{r}
+tail_length_model <- lm(as.numeric(PHENOTYPE)~GENOTYPE, data=tail_length)
+summary(tail_length_model)
+#p=3.865e-09
+tail_length.no.na <- na.omit(tail_length)
+
+tail_length.results <- data.frame(FID=as.factor(tail_length.no.na$FID), GENOTYPE = as.numeric(tail_length.no.na$GENOTYPE), PHENOTYPE = as.numeric(tail_length.no.na$PHENOTYPE))
+tail_length.results$predicted <- predict(tail_length_model)
+
+y_breaks <- pretty(range(tail_length.results$PHENOTYPE), n=5)
+x_breaks <- seq(min(tail_length.results$GENOTYPE), max(tail_length.results$GENOTYPE), length.out = 3)
+group_colors <- c("1" = "lightblue3", "2" = "tomato2")
+
+tail_length.plot <- ggplot(tail_length.results, aes(x = GENOTYPE, y = PHENOTYPE, color = FID)) +
+  geom_point() +   # Add data points with color aesthetic
+  geom_smooth(method = "lm", se = TRUE, color = "grey3") +  # Add smoothed trend line with confidence intervals
+  labs(x = "Genotype", y = "Tail Length (mm)") +  # Add axis labels
+  ggtitle("Tail Length vs SNP S22.14845898") +
+  scale_y_continuous(breaks = y_breaks) +
+  scale_x_continuous(breaks = x_breaks, labels = c("CC", "CT", "TT")) +
+  scale_color_manual(labels = c("WMNT", "PIPA"), values=group_colors) +  # Customize legend labels
+  theme_classic()
+
+ggsave("S22.14845898_tail_length.png", plot=tail_length.plot, path = "~/Desktop/GCRF/GCRF-Present/GenomicPipeline/data/allele_freq", width=9, height=7)
+```
+
+```{r}
+beak_length_model <- lm(as.numeric(PHENOTYPE)~GENOTYPE, data=beak_length)
+summary(beak_length_model)
+#p=3.865e-09
+beak_length.no.na <- na.omit(beak_length)
+
+beak_length.results <- data.frame(FID=as.factor(beak_length.no.na$FID), GENOTYPE = as.numeric(beak_length.no.na$GENOTYPE), PHENOTYPE = as.numeric(beak_length.no.na$PHENOTYPE))
+beak_length.results$predicted <- predict(beak_length_model)
+
+y_breaks <- pretty(range(beak_length.results$PHENOTYPE), n=5)
+x_breaks <- seq(min(beak_length.results$GENOTYPE), max(beak_length.results$GENOTYPE), length.out = 3)
+group_colors <- c("1" = "lightblue3", "2" = "tomato2")
+
+beak_length.plot <- ggplot(beak_length.results, aes(x = GENOTYPE, y = PHENOTYPE, color = FID)) +
+  geom_point() +   # Add data points with color aesthetic
+  geom_smooth(method = "lm", se = TRUE, color = "grey3") +  # Add smoothed trend line with confidence intervals
+  labs(x = "Genotype", y = "Beak Length (mm)") +  # Add axis labels
+  ggtitle("Beak Length vs SNP S1.39837818") +
+  scale_y_continuous(breaks = y_breaks) +
+  scale_x_continuous(breaks = x_breaks, labels = c("GG", "GA", "AA")) +
+  scale_color_manual(labels = c("WMNT", "PIPA"), values=group_colors) +  # Customize legend labels
+  theme_classic()
+
+ggsave("S1.39837818_beak_length.png", plot=beak_length.plot, path = "~/Desktop/GCRF/GCRF-Present/GenomicPipeline/data/allele_freq", width=9, height=7)
+```
+
+# IDENTIFYING GENES ASSOCIATED WITH THE SNPS
+## Bedtools closest
+
+```{}
+zcat GCRF.mkdp0_merged_25missing_min.5max.95_depth4_vqsr_gl_impute4.1.vcf.gz | grep -v "^#" | awk '{print$1"\t"($2-1)"\t"$2}' > GCRF_merged_impute4.1.bed
+head GCRF_merged_impute4.1.bed
+Scaffold_1__1_contigs__length_151072562	750	751
+Scaffold_1__1_contigs__length_151072562	2700	2701
+Scaffold_1__1_contigs__length_151072562	3063	3064
+Scaffold_1__1_contigs__length_151072562	4682	4683
+cat GCRF_merged_impute4.1.bed | awk '{print$1"\t"$2"\t"$3"\t"($1"."$3)}' > GCRF_merged_impute4.1_position.bed
+head GCRF_merged_impute4.1_position.bed
+Scaffold_1__1_contigs__length_151072562	750	751	Scaffold_1__1_contigs__length_151072562.751
+Scaffold_1__1_contigs__length_151072562	2700	2701	Scaffold_1__1_contigs__length_151072562.2701
+Scaffold_1__1_contigs__length_151072562	3063	3064	Scaffold_1__1_contigs__length_151072562.3064
+Scaffold_1__1_contigs__length_151072562	4682	4683	Scaffold_1__1_contigs__length_151072562.4683
+```
+
+Okay so that's making a .bed file, now I need to get this to be at a chromosomal level.... I'll try and do that in R. I used the reoder_VCF functions to take the vcf and remake it. I output that as GCRF_clean.SNP.imuted_gt.ZFchr.bed.
+
+ZFCHROM   ZFPOS   rs    pos-1
+1	1918677	Scaffold_2__1_contigs__length_114774641.114774617	114774616
+1	1918977	Scaffold_2__1_contigs__length_114774641.114774317	114774316
+1	1919112	Scaffold_2__1_contigs__length_114774641.114774182	114774181
+1	1920329	Scaffold_2__1_contigs__length_114774641.114772965	114772964
+1	1921417	Scaffold_2__1_contigs__length_114774641.114771877	114771876
+
+I then reformatted that to be what I need for the .bed file....
+cat GCRF_clean.SNP.imuted_gt.ZFchr.bed | awk '{print$1"\t"($2-1)"\t"$2"\t"$3}' > GCRF.SNP.imputed_gt.ZFchr.sorted.bed
+ZFCHROM ZFPOS-1 ZFPOS rs
+1	1918676	1918677	Scaffold_2__1_contigs__length_114774641.114774617
+1	1918976	1918977	Scaffold_2__1_contigs__length_114774641.114774317
+1	1919111	1919112	Scaffold_2__1_contigs__length_114774641.114774182
+1	1920328	1920329	Scaffold_2__1_contigs__length_114774641.114772965
+
+```{feather.bed}
+#Pulling out the specific SNPs I want to look at for this trait
+cat GCRF.SNP.imputed_gt.ZFchr.sorted.bed | grep -E "Scaffold_28__1_contigs__length_11240829\.4798538|Scaffold_1__1_contigs__length_151072562\.91081692|Scaffold_18__1_contigs__length_25274884\.2074884" > feather_PC_snps.bed
+
+#Converting my annotation file to a .bed file to run in bedtools closest
+gzip -dc Taeniopygia_guttata.taeGut3.2.4.98.chr.gtf.gz | gff2bed > Taeniopygia_guttata.bed
+bedtools sort -i Taeniopygia_guttata.bed > Taeniopygia_guttata_sorted.bed
+bedtools sort -i feather_PC_snps.bed > feather_PC_snps_sorted.bed
+
+#bedtools closest to get the genes
+bedtools closest -a feather_PC_snps_sorted.bed -b /scratch/alpine/ericacnr@colostate.edu/GCRF/Reference/ZEFI_annotation/Taeniopygia_guttata_sorted.bed -d > output_with_distance.bed
+```
+
+```{bill.bed}
+cat GCRF.SNP.imputed_gt.ZFchr.sorted.bed | grep -E "Scaffold_2__1_contigs__length_114774641.41203916" > bill_PC_snps.bed
+
+bedtools closest -a bill_PC_snps.bed -b /scratch/alpine/ericacnr@colostate.edu/GCRF/Reference/ZEFI_annotation/Taeniopygia_guttata_sorted.bed -d > bill_distance.bed
+```
+
+```{nare.length}
+cat GCRF.SNP.imputed_gt.ZFchr.sorted.bed | grep -E "Scaffold_6__1_contigs__length_71876329\.70598544|Scaffold_6__1_contigs__length_71876329\.70598546" > nare_length_snps.bed
+
+bedtools closest -a nare_length_snps.bed -b /scratch/alpine/ericacnr@colostate.edu/GCRF/Reference/ZEFI_annotation/Taeniopygia_guttata_sorted.bed -d > nare_length_distance.bed
+
+```
+
+```{beak.width}
+cat GCRF.SNP.imputed_gt.ZFchr.sorted.bed | grep -E "Scaffold_1__1_contigs__length_151072562\.25482370|Scaffold_2__1_contigs__length_114774641\.86583423" > beak_width_snps.bed
+
+bedtools closest -a beak_width_snps.bed -b /scratch/alpine/ericacnr@colostate.edu/GCRF/Reference/ZEFI_annotation/Taeniopygia_guttata_sorted.bed -d > beak_width_distance.bed
+```
+
+
+Now I'm going to try and tackle the wingchord snps...
+
+```{wing.chord}
+2	12993716	Scaffold_1__1_contigs__length_151072562.48200618
+2	14041130	Scaffold_1__1_contigs__length_151072562.49248032
+2	14308333	Scaffold_1__1_contigs__length_151072562.49515235
+2	14308348	Scaffold_1__1_contigs__length_151072562.49515250
+cat GCRF_wing_ulmm_clean_SNP.txt | awk '{print$1"\t"($2-1)"\t"$2"\t"$3}' > wing_snps.bed
+bedtools sort -i wing_snps.bed > wing_snps_sorted.bed
+
+bedtools closest -a wing_snps_sorted.bed -b /scratch/alpine/ericacnr@colostate.edu/GCRF/Reference/ZEFI_annotation/Taeniopygia_guttata_sorted.bed -d > wing_distance.bed
+```
+
+
+## Figuring out what the genes do
+
+```{r}
+bill_PC <- read.table("~/Desktop/GCRF/GCRF-Present/GenomicPipeline/data/genes/bill_distance.bed", sep="\t")
+feather_PC <- read.table("~/Desktop/GCRF/GCRF-Present/GenomicPipeline/data/genes/feather_distance.bed", sep="\t")
+beak_width <- read.table("~/Desktop/GCRF/GCRF-Present/GenomicPipeline/data/genes/beak_width_distance.bed", sep="\t")
+nare_length <- read.table("~/Desktop/GCRF/GCRF-Present/GenomicPipeline/data/genes/nare_length_distance.bed", sep="\t")
+wing_chord <- read.table("~/Desktop/GCRF/GCRF-Present/GenomicPipeline/data/genes/wing_distance.bed", sep="\t")
+```
+
+```{r}
+head(bill_PC)
+bill_PC_genes <- bill_PC %>% filter(bill_PC$V12=="gene")
+```
+https://jul2019.archive.ensembl.org/Taeniopygia_guttata/Transcript/ProteinSummary?db=core;g=ENSTGUG00000012674;p=ENSTGUP00000013044.1;r=1:75489293-75493871;t=ENSTGUT00000013193
+
+Got the transcript from the more recent version of the genes as the assembly I used is slightly out of date.
+IEENMANQRDYISRPICNGISVPENKINSLVAEGHGQQILKVLQKFREQNIFFDFKIRVK
+DEIIPCHRCVLAACSDFFRAMFEVNMKERDDGNVTISNLSPKAVKAFLDYAYTGKTEITN
+DNVEMLFQLSSFLQVSLLSKACSDFLIKSIDLVNCLQLLSLSESYGSVRLFDHALDYVQH
+HFSLLLRSSDFLEMNFEILQKCLEADELNVPEEESVLKAVLQWTKHNLETRQKYLPNLMK
+KVRLHQLPEKTLQDFLHSEEHLLKNANCLVIINDAVQSVQNFSGLFPDARPSTTEKYIFV
+HKTDEDGENRHTFCYNIKTDKWKELPHTHMIDLPGSSLSSYGEKIFITGGCKGNCYRTVR
+LHIAEPFHDATDQTWCYCPVSNEFSIVSAMKKPRTMHTSVVTLNQLFVIGGKTRGAQETR
+SLLDVESYNPLSKDWKSVSQLPRGIYYPEASACQNIIYVLGSEVEITDAFNPSLDCFFKY
+NAVTDQWSELVAEFGQFFHATLIKAVPVNCTLYICDLSTYKVYSFCPETCVWKGEGSFEC
+AGFNAGAVGTEDKIYILGGDYAPEEITDEVQVYHSSRSEWEEVSPMPRALTEFYCQVIQF
+NRYRDPW
+KBTBD3
+UniProt:R4GMH9
+
+Plugging this into a pBLAST to see if anything interesting flags.
+Well it's definitely a Kelch repeat and BTB domain-containing protein 3 (KBTB3), whatever that does.
+
+#######################################################
+
+```{r}
+feather_PC_gene <- feather_PC %>% filter(feather_PC$V12=="gene")
+```
+Scaffold_28__1_contigs__length_11240829.4798538:
+https://jul2019.archive.ensembl.org/Taeniopygia_guttata/Gene/Summary?db=core;g=ENSTGUG00000004720;r=17:6617676-6692361;t=ENSTGUT00000004947
+ILGKAAYSYFMGQQPGKVLGDQRRPSLPALHFIKGAGKKESSRHAGPHCNVFVEHEALQR
+PVVSDFEPQGLSEAARWNSKENLLSCPSENDPHLFVALYDFVASGDNTLSITKGEKLRVL
+GYNHNGEWCEAQTKNGQGWVPSNYITPVNSLEKHSWYHGPVSRNAAEYLLSSGINGSFLV
+RESESSPGQRSISLRYEGRVYHYRINTASDGKLYVSSESRFNTLAELVHHHSTVADGLIT
+TLHYPAPKRNKPTIYGVSPNYDKWEIERTDITMKHKLGGGQYGEVYEGVWKKYNLTVAVK
+TLKEDTMEVEEFLKEAAVMKEIKHPNLVQLLGVCTREPPFYIITEFMTYGNLLDYLRECN
+RQEVNAVVLLYMATQISSAMEYLEKKNFIHRDLAARNCLVGENHLVKVADFGLSRLMTGD
+TYTAHAGAKFPIKWTAPESLAYNKFSIKSDVWAFGVLLWEIATYGMSPYPGIDLSQVYEL
+LEKDYRMERPEGCPEKVYELMRACWQWSPSDRPSFAEIHQAFETMFQESSISDEVEKELG
+KKGMRSVVSNFLQAPELPTKTRTSRRAAESKDANEGLETAHARGQGECDLLDHEPAVSPL
+LPRKERVALESSLNEDERLLPKDKKHNLFSALIKKKKKTAPTPPKRSSSFREMDGHSERR
+VGGEEECRDAGNGAFIAPPADTAEPSKFQSPSNGAGVTNGVVAGNSGFLSPHLRKKSSTM
+SSSRGVAGEEESSSNSSKRFLRSCSASCVPHGAKDTEWKSVTLPRDLQSTGRQFDSSTFG
+GHKSEKPALPRKRANEAKADIAVRGTVTPPPRLLKKNEETADDVFKDAESSPGSSPPTLT
+PKLGRRQPAAPPSSSGLHKDDGVKSSALGTTVMMDQGSAAKPNPAGFGGASKASSEEPRL
+RRLKQTSESAGKDKGKLSKLKPAPPLPLSSSSIAKPGKVSHSPGHEAAADVVSGLKSKQL
+TQVGEAAGSDAVKPNQSGEGVKKLGIPSVPKPQSSTKLLLSTATPAASSSSIPSAPGGDQ
+PSSTAFIPLISTRVSLRKTRQPPERIASGTITKGVVLESTEALRLAISKNSEQMASHSAV
+LEAGKNLYTFCVSYVDSIQQMRNKFAFREAINKLENNLRELQICPATAGSGPAATQDFSK
+LLSSVKEISDIVQR
+ABL1
+UniProt:A0A8V1ACF7
+https://amigo.geneontology.org/amigo/gene_product/UniProtKB:A0A8V1ACF7
+https://en.wikipedia.org/wiki/ABL_(gene)
+
+Scaffold_1__1_contigs__length_151072562.91081692:
+https://jul2019.archive.ensembl.org/Taeniopygia_guttata/Gene/Summary?db=core;g=ENSTGUG00000003223;r=2:55877626-55890544;t=ENSTGUT00000003363
+VTPIAVRKFRNTTDPAPGAKIIFYGSAGDPDVATHLTHGIKSTSKFTVASLVSPVAKSEF
+QEKMQDMKEAIYSSNREAPLGKSHDQSSKLPEGLDIINTTFGVKVFKDLTAGELVNPPKT
+FEEVDTEAREGHDLYVLSHEDYYVGESVNRKYNSHFDKSSVYGMETPHYEDGRNTAKTLN
+WVLDLDSKRAPHLVSKQSDDFKEKYQPLVGKALDPIAETMNVPPDHTFGLVTSPDEYDVH
+DLLHVRVPCEFLRGKDRERVILIAVRESLKKADYRNFDVLLEALKHFDKNGDGTIHKDNL
+RKIFFQLNMNLDDELLESLFDCCDLDKDGLINYWDFANFLNWKDKMGVKEFEEKIITKGK
+KLDAYLPKDTKKEDKPLPEQGDLELKEPETSEKMSKPLTRSTDRVYTNYQTSSSQYNAVV
+GGIPTSCYPLCGVPSIRSDIPAPRVCRLSDTTNYGDQGNSFSVMFPSVFSQKGVYEKDLL
+KKRPKAEIKQVLHNMGLNAADERFEEVWKQVCAKH
+EFHB
+UniProt: A0A8V0XCM4
+https://amigo.geneontology.org/amigo/gene_product/UniProtKB:A0A8V0XCM0
+Select seq ref|XP_030120819.1|	EF-hand domain-containing family member B isoform X1
+
+Scaffold_18__1_contigs__length_25274884.2074884:
+https://jul2019.archive.ensembl.org/Taeniopygia_guttata/Gene/Summary?db=core;g=ENSTGUG00000011087;r=9:23971344-23974600;t=ENSTGUT00000011551
+MGMNKQGKTDPLECGRNPVSPKEISQEKPVVCSDLEFNAVQEESVEPEVGRRSLSSCELP
+ELSEPSGGVSKDLPGAELKSSRDLPESEESRREPQELGSVCSTQSLVLPVVTKPSALQDV
+AKRQKCGSTSYQGLEGFFVGANPKQEKLEAPSSLAAASSPRDRKIPFPGDGLWVSERSLS
+EYADDSVVQGVLASQLSRAANPFQAQNQLSHLMAASM
+ZBBX
+UniProt:A0A8V0XAB2
+
+#######################################################
+```{r}
+beak_width_gene <- beak_width %>% filter(beak_width$V12=="gene")
+```
+https://jul2019.archive.ensembl.org/Taeniopygia_guttata/Gene/Summary?db=core;g=ENSTGUG00000018334;r=1:30143374-30152156;t=ENSTGUT00000019205
+SSSLTEAKEFVKRLRRQTDLCNMVKTVRALLNNNSTVTVLRSGLHAIFKEKSLDVTKDLF
+QEKSRNPKKRQRNIQLKCLKNFISSLASSTDIQDLLSCLSSDLQTFVIKPSKNKEAFKEQ
+ASDFMLKWSLLLSNVGKILTINRTESFG 
+RFX8
+UniProt:A0A8V0YKD9
+
+
+```{r}
+nare_length_gene <- nare_length %>% filter(nare_length$V12=="gene")
+```
+Got an unexpected output from this that doesn't seem to have any information.
+
+```{r}
+wing_gene <- wing_chord %>% filter(wing_chord$V12=="gene")
+```
+
+Jeez, 945 genes.... Gotta filter by location for this I think.... Filtering for those with start positions less than or equal to 25kb away from the position of the SNP.
+
+```{r}
+wing_close_genes <- wing_gene %>% filter(wing_gene$V2-wing_gene$V6 <=25000)
+nrow(wing_close_genes)
+```
+
+Still have a ton (534), so let me be a bit more stringent. Let's try 10KB, that's what Marina used based on her LD Decay profile.
+
+```{r}
+wing_close_genes <- wing_gene %>% filter(wing_gene$V2-wing_gene$V6 <=10000)
+nrow(wing_close_genes)
+```
+Got it down to 340. Maybe I'll try narrowing it down a bit more to protein coding genes only...
+
+```{r}
+df <- separate(wing_close_genes, V14, into = paste0("V14_", 1:6), sep = "; ")
+
+# Add column names
+colnames(df)[grep("^V14_", colnames(df))] <- c("gene_id", "gene_version", "gene_name", "gene_source", "gene_biotype", "additional_info")
+
+wing_close_genes <- data.frame(wing_close_genes[,1:13], df, wing_close_genes$V15)
+head(wing_close_genes)
+
+wing_pt_coding <- wing_close_genes %>% filter(wing_close_genes$gene_biotype=="gene_biotype protein_coding;")
+nrow(wing_pt_coding)
+```
+Okay I think I can work with 197. And actually, if you narrow this down to unique things it's only 46! Which is totally reasonable. Going to get that as a text file and plug it into Gene Ontology Resource.
+
+```{r}
+wing_gene_names <- unique(wing_pt_coding$gene_name)
+write.table(wing_gene_names, "/Users/ericarobertson/Desktop/GCRF/GCRF-Present/GenomicPipeline/data/genes/wing_chord_genes.txt")
+```
+Fiddled with that in terminal to get just the wing names: wing_chord_gene_names.txt
+
+Into Gene Ontology. So with corrections for multiple testing there doesn't seem to be anything significant, but if I don't do those corrections there's a crap ton of stuff.
+
+Positive regulation of cyclin-dependent protein serine/threonine kinda activity is number one...
+
+
+
+
+
+
+
+
+
+
+
+
+
+
