@@ -2,7 +2,7 @@
 
 #First, we are going to play with the hyperparameter estimates, which will inform us of the genetic architecture of the trait.
 
-setwd("GenomicPipeline/data/bslmm")
+setwd("/Users/ericarobertson/Desktop/GCRF/GCRF-Present/GenomicPipeline/data/bslmm")
 
 # Load hyperparameter file
 # ==============================================================================
@@ -31,14 +31,14 @@ colnames(hyp.params.table)<-c("hyperparam", "mean","median","2.5%", "97.5%")
 # show table
 hyp.params.table
 # write table to file
-write.table(hyp.params.table, file="hyperparameters.dsv", sep="\t", quote=F)
+write.table(hyp.params.table, file="GCRF_bill_hyperparameters.dsv", sep="\t", quote=F)
 # ==============================================================================
 
 
 
 # plot traces and distributions of hyperparameters
 # ==============================================================================
-pdf(file="hyperparameters.pdf", width=8.3,height=11.7)
+pdf(file="GCRF_bill_PC_hyperparameters.pdf", width=8.3,height=11.7)
 layout(matrix(c(1,1,2,3,4,4,5,6), 4, 2, byrow = TRUE))
 
 # PVE

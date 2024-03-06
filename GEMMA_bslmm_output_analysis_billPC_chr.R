@@ -86,12 +86,12 @@ setwd("GenomicPipeline/data/bslmm")
 
 library(data.table)
 
-nums <- read.table("scaffold_nums_clean_billPC.txt")
-colnames(nums) <- "chr"
+#nums <- read.table("scaffold_nums_clean_billPC.txt")
+#olnames(nums) <- "chr"
 
 # Load parameters output
 # ==============================================================================
-params<-fread("GCRF_clean.SNP.rm_hets.RegionFID.imuted_gt.fix_name.noNA.chr1-31ZF.genotype.txt",header=T,sep="\t", data.table=F)
+params<-fread("GCRF_billPC_clean.chr1-31ZF.genotype.params.txt",header=T,sep="\t", data.table=F)
 # ==============================================================================
 
 #params <- data.frame(nums, params[,-1])
@@ -144,13 +144,13 @@ head(params.pipsort,10)
 
 # sets of variants above a certain threshold
 # variants with effect in 1% MCMC samples or more
-pip01<-params.pipsort[params.pipsort$gamma>=0.01,]
+pip01.bill<-params.pipsort[params.pipsort$gamma>=0.01,]
 # variants with effect in 10% MCMC samples or more
-pip10<-params.pipsort[params.pipsort$gamma>=0.10,]
+pip10.bill<-params.pipsort[params.pipsort$gamma>=0.10,]
 # variants with effect in 25% MCMC samples or more
-pip25<-params.pipsort[params.pipsort$gamma>=0.25,]
+pip25.bill<-params.pipsort[params.pipsort$gamma>=0.25,]
 # variants with effect in 50% MCMC samples or more
-pip50<-params.pipsort[params.pipsort$gamma>=0.50,]
+pip50.bill<-params.pipsort[params.pipsort$gamma>=0.50,]
 
 # write tables
 #write.table(pip01, file="pip01.dsv", quote=F, row.names=F, sep="\t")
@@ -166,11 +166,10 @@ pip50<-params.pipsort[params.pipsort$gamma>=0.50,]
 # ------------------------------------------------------------------------------
 
 # add linkage group column (chr)
-chr<-params$chr
-colnames(params) <- c("rs", "chr", "POS", "n_miss", "alpha", "beta", "gamma", "eff")
+chr<-params$ZFCHROM
 
 # sort by linkage group and position
-params.sort<-params[order(as.numeric(params$chr), params$rs),]
+params.sort<-params[order(as.numeric(params$ZFCHROM), params$ZFPOS),]
 
 # get list of linkage groups/chromosomes
 chrs<-sort(unique(as.numeric(chr)))
@@ -181,18 +180,17 @@ chrs<-sort(unique(as.numeric(chr)))
 # also opening vectorial files with many objects is slow
 # ------------------------------------------------------------------------------
 # ------------------------------------------------------------------------------
-png(file="pip_plot_bill0.1_chr.png", width=11.7,height=8.3,units="in",res=200)
+png(file="../bslmm/new_pip_plot_bill0.01_chr.png", width=11.7,height=8.3,units="in",res=200)
 
 # set up empty plot
-plot(-1,-1,xlim=c(0,nrow(params.sort)),ylim=c(0,1),ylab="PIP",xlab="linkage group", xaxt="n")
+plot(-1,-1,xlim=c(0,nrow(params.sort)),ylim=c(0,1),ylab="PIP",xlab="Chromosome", xaxt="n")
 
-#title("Title of Your Plot")
 # plot grey bands for chromosome/linkage groups
 # ------------------------------------------------------------------------------
 start<-1
 lab.pos<-vector()
 for (ch in chrs){
-  size<-nrow(params.sort[params.sort$chr==ch,])
+  size<-nrow(params.sort[params.sort$ZFCHROM==ch,])
   cat ("CH: ", ch, "\n")
   colour<-"lightgrey"
   if (ch%%2 > 0){
@@ -231,20 +229,20 @@ symbols(x,y,circles=z, bg="grey14",inches=1/5, fg=NULL,add=T)
 # highligh high PIP variants (PIP>=0.25)
 # ------------------------------------------------------------------------------
 # plot threshold line
-abline(h=0.1,lty=3,col="dark grey")
+abline(h=0.01,lty=3,col="dark grey")
 # rank of high PIP variants across linkage groups
-x<-match(params.sort$gamma[params.sort$gamma>=0.1],params.sort$gamma)
+x<-match(params.sort$gamma[params.sort$gamma>=0.01],params.sort$gamma)
 # PIP
-y<-params.sort$gamma[params.sort$gamma>=0.1]
+y<-params.sort$gamma[params.sort$gamma>=0.01]
 # sparse effect size, used for dot size
-z<-params.sort$eff[params.sort$gamma>=0.1]
+z<-params.sort$eff[params.sort$gamma>=0.01]
 z<-1/abs(log(z))
 
 symbols(x,y,circles=z, bg="tomato",inches=1/5,fg=NULL,add=T)
 # ------------------------------------------------------------------------------
 
 # add label high PIP variants
-text(x,y,labels=params.sort$rs[params.sort$gamma>=0.1], adj=c(0,0), cex=0.8)
+text(x,y,labels=params.sort$rs[params.sort$gamma>=0.01], adj=c(0,0), cex=0.8)
 # ------------------------------------------------------------------------------
 # ------------------------------------------------------------------------------
 
