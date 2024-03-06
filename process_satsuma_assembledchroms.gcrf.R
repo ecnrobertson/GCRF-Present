@@ -217,6 +217,8 @@ write.csv(sca.chrom.map,"GCRF_scaffold_chrom_map_ZFinch_Un.csv",row.names=F)
 #------------------------------
 #STEP 4: ORDERING SCA.CHROM.MAP & SAVING OUTPUT FILE
 
+sca.chrom.map <- read.csv("GCRF_scaffold_chrom_map_ZFinch_Un.csv")
+
 # measuring length of successfully mapped scaffolds and comparing it to the total length of the included scaffolds
 sum(ZLat.scafs$length[match(as.character(sca.chrom.map$ZLat.scaffold),ZLat.scafs$scaffold)])/sum(ZLat.scafs$length)
 # For me, this value was 0.9447883 <- proportion mapped to Zebra Finch Genome
@@ -234,6 +236,7 @@ scaffold.order$chr[scaffold.order$chr == '1A'] <- '1.1'
 scaffold.order$chr[scaffold.order$chr == '4A'] <- '4.1'
 scaffold.order$chr[scaffold.order$chr == 'Z'] <- '29'
 scaffold.order$chr[scaffold.order$chr == 'LGE22'] <- '30'
+scaffold.order$chr[scaffold.order$chr == 'MT'] <- 31
 #scaffold.order$chr[scaffold.order$chr == '3_random'] <- '31.1'
 #scaffold.order$chr[scaffold.order$chr == '4_random'] <- '31.2'
 scaffold.order$chr[scaffold.order$chr == '8_random'] <- '31.3'
