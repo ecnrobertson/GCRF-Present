@@ -1139,11 +1139,11 @@ colnames(S2.1.41203916.bill) <- c("FID", "IID", "PAT", "MAT", "SEX", "PHENOTYPE"
 #### new stuff
 Taking advantage of this setback by putting everything into for loops.
 ```{r, getting data set up}
-feather_file_names <- list.files(path="GCRF-Present/GenomicPipeline/data/allele_freq/", pattern = ".feather.raw$", full.names = TRUE)
+feather_file_names <- list.files(path="GCRF-Present/GenomicPipeline/data/allele_freq/feather/", pattern = ".feather.raw$", full.names = TRUE)
   feather_data_list <- lapply(feather_file_names, function(file) {
   read.table(file, header = TRUE, sep = " ")
 })
-bill_file_names <- list.files(path="GCRF-Present/GenomicPipeline/data/allele_freq", pattern = ".bill.raw$", full.names = TRUE)
+bill_file_names <- list.files(path="GCRF-Present/GenomicPipeline/data/allele_freq/bill/", pattern = ".bill.raw$", full.names = TRUE)
 bill_data_list <- lapply(bill_file_names, function(file) {
   read.table(file, header = TRUE, sep = " ")
 })
@@ -1782,53 +1782,54 @@ Scaffold_1__1_contigs__length_151072562	4682	4683	Scaffold_1__1_contigs__length_
 Okay so that's making a .bed file, now I need to get this to be at a chromosomal level.... I'll try and do that in R. I used the reoder_VCF functions to take the vcf and remake it. I output that as GCRF_clean.SNP.imuted_gt.ZFchr.bed.
 
 ZFCHROM   ZFPOS   rs    pos-1
-1	1918677	Scaffold_2__1_contigs__length_114774641.114774617	114774616
 1	1918977	Scaffold_2__1_contigs__length_114774641.114774317	114774316
-1	1919112	Scaffold_2__1_contigs__length_114774641.114774182	114774181
 1	1920329	Scaffold_2__1_contigs__length_114774641.114772965	114772964
 1	1921417	Scaffold_2__1_contigs__length_114774641.114771877	114771876
+1	1922933	Scaffold_2__1_contigs__length_114774641.114770361	114770360
 
 I then reformatted that to be what I need for the .bed file....
 cat GCRF_clean.SNP.imuted_gt.ZFchr.bed | awk '{print$1"\t"($2-1)"\t"$2"\t"$3}' > GCRF.SNP.imputed_gt.ZFchr.sorted.bed
 ZFCHROM ZFPOS-1 ZFPOS rs
-1	1918676	1918677	Scaffold_2__1_contigs__length_114774641.114774617
 1	1918976	1918977	Scaffold_2__1_contigs__length_114774641.114774317
-1	1919111	1919112	Scaffold_2__1_contigs__length_114774641.114774182
 1	1920328	1920329	Scaffold_2__1_contigs__length_114774641.114772965
+1	1921416	1921417	Scaffold_2__1_contigs__length_114774641.114771877
+1	1922932	1922933	Scaffold_2__1_contigs__length_114774641.114770361
 
 ```{feather.bed}
 #Pulling out the specific SNPs I want to look at for this trait
-cat GCRF.SNP.imputed_gt.ZFchr.sorted.bed | grep -E "Scaffold_28__1_contigs__length_11240829\.4798538|Scaffold_1__1_contigs__length_151072562\.91081692|Scaffold_18__1_contigs__length_25274884\.2074884" > feather_PC_snps.bed
+cat GCRF.SNP.imputed_gt.ZFchr.sorted.bed | grep -E "Scaffold_8__1_contigs__length_35685229.25471973|Scaffold_6__1_contigs__length_71876329.60198070|Scaffold_2__1_contigs__length_114774641.92336930|Scaffold_5__1_contigs__length_71959612.65589803|Scaffold_1__1_contigs__length_151072562.128626182|Scaffold_1__1_contigs__length_151072562.146593939|Scaffold_2__1_contigs__length_114774641.80634326|Scaffold_3__1_contigs__length_112408489.112330666" > ../new_input_files/snps/feather_PC_snps.bed
 
 #Converting my annotation file to a .bed file to run in bedtools closest
+conda activate bioinf
 gzip -dc Taeniopygia_guttata.taeGut3.2.4.98.chr.gtf.gz | gff2bed > Taeniopygia_guttata.bed
 bedtools sort -i Taeniopygia_guttata.bed > Taeniopygia_guttata_sorted.bed
 bedtools sort -i feather_PC_snps.bed > feather_PC_snps_sorted.bed
 
 #bedtools closest to get the genes
-bedtools closest -a feather_PC_snps_sorted.bed -b /scratch/alpine/ericacnr@colostate.edu/GCRF/Reference/ZEFI_annotation/Taeniopygia_guttata_sorted.bed -d > output_with_distance.bed
+bedtools closest -a feather_PC_snps_sorted.bed -b /scratch/alpine/ericacnr@colostate.edu/GCRF/Reference/ZEFI_annotation/Taeniopygia_guttata_sorted.bed -d > feather_distance.bed
 ```
 
 ```{bill.bed}
-cat GCRF.SNP.imputed_gt.ZFchr.sorted.bed | grep -E "Scaffold_2__1_contigs__length_114774641.41203916" > bill_PC_snps.bed
+cat GCRF.SNP.imputed_gt.ZFchr.sorted.bed | grep -E "Scaffold_1__1_contigs__length_151072562\.54132477|Scaffold_7__1_contigs__length_62267870\.31872111|Scaffold_2__1_contigs__length_114774641\.85189033|Scaffold_23__1_contigs__length_18116493\.1385210|Scaffold_1__1_contigs__length_151072562\.138869993|Scaffold_2__1_contigs__length_114774641\.103228656|Scaffold_1__1_contigs__length_151072562\.108192624|Scaffold_23__1_contigs__length_18116493\.2449928|Scaffold_5__1_contigs__length_71959612\.14244530" > ../new_input_files/snps/bill_PC_snps.bed
 
-bedtools closest -a bill_PC_snps.bed -b /scratch/alpine/ericacnr@colostate.edu/GCRF/Reference/ZEFI_annotation/Taeniopygia_guttata_sorted.bed -d > bill_distance.bed
+bedtools sort -i bill_PC_snps.bed > bill_PC_snps_sorted.bed
+bedtools closest -a bill_PC_snps_sorted.bed -b /scratch/alpine/ericacnr@colostate.edu/GCRF/Reference/ZEFI_annotation/Taeniopygia_guttata_sorted.bed -d > bill_distance.bed
 ```
 
-```{nare.length}
-cat GCRF.SNP.imputed_gt.ZFchr.sorted.bed | grep -E "Scaffold_6__1_contigs__length_71876329\.70598544|Scaffold_6__1_contigs__length_71876329\.70598546" > nare_length_snps.bed
+```{tail.length}
+cat GCRF.SNP.imputed_gt.ZFchr.sorted.bed | grep -E "Scaffold_22__1_contigs__length_19532606.14845898" > ../new_input_files/snps/tail_length_snp.bed
 
-bedtools closest -a nare_length_snps.bed -b /scratch/alpine/ericacnr@colostate.edu/GCRF/Reference/ZEFI_annotation/Taeniopygia_guttata_sorted.bed -d > nare_length_distance.bed
+bedtools closest -a tail_length_snp.bed -b /scratch/alpine/ericacnr@colostate.edu/GCRF/Reference/ZEFI_annotation/Taeniopygia_guttata_sorted.bed -d > tail_length_distance.bed
 
 ```
 
-```{beak.width}
-cat GCRF.SNP.imputed_gt.ZFchr.sorted.bed | grep -E "Scaffold_1__1_contigs__length_151072562\.25482370|Scaffold_2__1_contigs__length_114774641\.86583423" > beak_width_snps.bed
+```{beak.length}
+cat GCRF.SNP.imputed_gt.ZFchr.sorted.bed | grep -E "Scaffold_1__1_contigs__length_151072562.39837818" > ../new_input_files/snps/beak_length_snp.bed
 
-bedtools closest -a beak_width_snps.bed -b /scratch/alpine/ericacnr@colostate.edu/GCRF/Reference/ZEFI_annotation/Taeniopygia_guttata_sorted.bed -d > beak_width_distance.bed
+bedtools closest -a beak_length_snp.bed -b /scratch/alpine/ericacnr@colostate.edu/GCRF/Reference/ZEFI_annotation/Taeniopygia_guttata_sorted.bed -d > beak_length_distance.bed
 ```
 
-
+### OLD WINGCHORD STUFF
 Now I'm going to try and tackle the wingchord snps...
 
 ```{wing.chord}
@@ -1844,166 +1845,164 @@ bedtools closest -a wing_snps_sorted.bed -b /scratch/alpine/ericacnr@colostate.e
 
 
 ## Figuring out what the genes do
-
+### extracting the informations
 ```{r}
 bill_PC <- read.table("~/Desktop/GCRF/GCRF-Present/GenomicPipeline/data/genes/bill_distance.bed", sep="\t")
 feather_PC <- read.table("~/Desktop/GCRF/GCRF-Present/GenomicPipeline/data/genes/feather_distance.bed", sep="\t")
-beak_width <- read.table("~/Desktop/GCRF/GCRF-Present/GenomicPipeline/data/genes/beak_width_distance.bed", sep="\t")
-nare_length <- read.table("~/Desktop/GCRF/GCRF-Present/GenomicPipeline/data/genes/nare_length_distance.bed", sep="\t")
-wing_chord <- read.table("~/Desktop/GCRF/GCRF-Present/GenomicPipeline/data/genes/wing_distance.bed", sep="\t")
+beak_length <- read.table("~/Desktop/GCRF/GCRF-Present/GenomicPipeline/data/genes/beak_length_distance.bed", sep="\t")
+tail_length <- read.table("~/Desktop/GCRF/GCRF-Present/GenomicPipeline/data/genes/tail_length_distance.bed", sep="\t")
 ```
 
-```{r}
+```{r, bill_genes}
 head(bill_PC)
 bill_PC_genes <- bill_PC %>% filter(bill_PC$V12=="gene")
-```
-https://jul2019.archive.ensembl.org/Taeniopygia_guttata/Transcript/ProteinSummary?db=core;g=ENSTGUG00000012674;p=ENSTGUP00000013044.1;r=1:75489293-75493871;t=ENSTGUT00000013193
 
-Got the transcript from the more recent version of the genes as the assembly I used is slightly out of date.
-IEENMANQRDYISRPICNGISVPENKINSLVAEGHGQQILKVLQKFREQNIFFDFKIRVK
-DEIIPCHRCVLAACSDFFRAMFEVNMKERDDGNVTISNLSPKAVKAFLDYAYTGKTEITN
-DNVEMLFQLSSFLQVSLLSKACSDFLIKSIDLVNCLQLLSLSESYGSVRLFDHALDYVQH
-HFSLLLRSSDFLEMNFEILQKCLEADELNVPEEESVLKAVLQWTKHNLETRQKYLPNLMK
-KVRLHQLPEKTLQDFLHSEEHLLKNANCLVIINDAVQSVQNFSGLFPDARPSTTEKYIFV
-HKTDEDGENRHTFCYNIKTDKWKELPHTHMIDLPGSSLSSYGEKIFITGGCKGNCYRTVR
-LHIAEPFHDATDQTWCYCPVSNEFSIVSAMKKPRTMHTSVVTLNQLFVIGGKTRGAQETR
-SLLDVESYNPLSKDWKSVSQLPRGIYYPEASACQNIIYVLGSEVEITDAFNPSLDCFFKY
-NAVTDQWSELVAEFGQFFHATLIKAVPVNCTLYICDLSTYKVYSFCPETCVWKGEGSFEC
-AGFNAGAVGTEDKIYILGGDYAPEEITDEVQVYHSSRSEWEEVSPMPRALTEFYCQVIQF
-NRYRDPW
-KBTBD3
-UniProt:R4GMH9
+bill_close_genes <- bill_PC_genes %>% filter(bill_PC_genes$V2-bill_PC_genes$V6 <=25000)
+nrow(bill_close_genes)
 
-Plugging this into a pBLAST to see if anything interesting flags.
-Well it's definitely a Kelch repeat and BTB domain-containing protein 3 (KBTB3), whatever that does.
-
-#######################################################
-
-```{r}
-feather_PC_gene <- feather_PC %>% filter(feather_PC$V12=="gene")
-```
-Scaffold_28__1_contigs__length_11240829.4798538:
-https://jul2019.archive.ensembl.org/Taeniopygia_guttata/Gene/Summary?db=core;g=ENSTGUG00000004720;r=17:6617676-6692361;t=ENSTGUT00000004947
-ILGKAAYSYFMGQQPGKVLGDQRRPSLPALHFIKGAGKKESSRHAGPHCNVFVEHEALQR
-PVVSDFEPQGLSEAARWNSKENLLSCPSENDPHLFVALYDFVASGDNTLSITKGEKLRVL
-GYNHNGEWCEAQTKNGQGWVPSNYITPVNSLEKHSWYHGPVSRNAAEYLLSSGINGSFLV
-RESESSPGQRSISLRYEGRVYHYRINTASDGKLYVSSESRFNTLAELVHHHSTVADGLIT
-TLHYPAPKRNKPTIYGVSPNYDKWEIERTDITMKHKLGGGQYGEVYEGVWKKYNLTVAVK
-TLKEDTMEVEEFLKEAAVMKEIKHPNLVQLLGVCTREPPFYIITEFMTYGNLLDYLRECN
-RQEVNAVVLLYMATQISSAMEYLEKKNFIHRDLAARNCLVGENHLVKVADFGLSRLMTGD
-TYTAHAGAKFPIKWTAPESLAYNKFSIKSDVWAFGVLLWEIATYGMSPYPGIDLSQVYEL
-LEKDYRMERPEGCPEKVYELMRACWQWSPSDRPSFAEIHQAFETMFQESSISDEVEKELG
-KKGMRSVVSNFLQAPELPTKTRTSRRAAESKDANEGLETAHARGQGECDLLDHEPAVSPL
-LPRKERVALESSLNEDERLLPKDKKHNLFSALIKKKKKTAPTPPKRSSSFREMDGHSERR
-VGGEEECRDAGNGAFIAPPADTAEPSKFQSPSNGAGVTNGVVAGNSGFLSPHLRKKSSTM
-SSSRGVAGEEESSSNSSKRFLRSCSASCVPHGAKDTEWKSVTLPRDLQSTGRQFDSSTFG
-GHKSEKPALPRKRANEAKADIAVRGTVTPPPRLLKKNEETADDVFKDAESSPGSSPPTLT
-PKLGRRQPAAPPSSSGLHKDDGVKSSALGTTVMMDQGSAAKPNPAGFGGASKASSEEPRL
-RRLKQTSESAGKDKGKLSKLKPAPPLPLSSSSIAKPGKVSHSPGHEAAADVVSGLKSKQL
-TQVGEAAGSDAVKPNQSGEGVKKLGIPSVPKPQSSTKLLLSTATPAASSSSIPSAPGGDQ
-PSSTAFIPLISTRVSLRKTRQPPERIASGTITKGVVLESTEALRLAISKNSEQMASHSAV
-LEAGKNLYTFCVSYVDSIQQMRNKFAFREAINKLENNLRELQICPATAGSGPAATQDFSK
-LLSSVKEISDIVQR
-ABL1
-UniProt:A0A8V1ACF7
-https://amigo.geneontology.org/amigo/gene_product/UniProtKB:A0A8V1ACF7
-https://en.wikipedia.org/wiki/ABL_(gene)
-
-Scaffold_1__1_contigs__length_151072562.91081692:
-https://jul2019.archive.ensembl.org/Taeniopygia_guttata/Gene/Summary?db=core;g=ENSTGUG00000003223;r=2:55877626-55890544;t=ENSTGUT00000003363
-VTPIAVRKFRNTTDPAPGAKIIFYGSAGDPDVATHLTHGIKSTSKFTVASLVSPVAKSEF
-QEKMQDMKEAIYSSNREAPLGKSHDQSSKLPEGLDIINTTFGVKVFKDLTAGELVNPPKT
-FEEVDTEAREGHDLYVLSHEDYYVGESVNRKYNSHFDKSSVYGMETPHYEDGRNTAKTLN
-WVLDLDSKRAPHLVSKQSDDFKEKYQPLVGKALDPIAETMNVPPDHTFGLVTSPDEYDVH
-DLLHVRVPCEFLRGKDRERVILIAVRESLKKADYRNFDVLLEALKHFDKNGDGTIHKDNL
-RKIFFQLNMNLDDELLESLFDCCDLDKDGLINYWDFANFLNWKDKMGVKEFEEKIITKGK
-KLDAYLPKDTKKEDKPLPEQGDLELKEPETSEKMSKPLTRSTDRVYTNYQTSSSQYNAVV
-GGIPTSCYPLCGVPSIRSDIPAPRVCRLSDTTNYGDQGNSFSVMFPSVFSQKGVYEKDLL
-KKRPKAEIKQVLHNMGLNAADERFEEVWKQVCAKH
-EFHB
-UniProt: A0A8V0XCM4
-https://amigo.geneontology.org/amigo/gene_product/UniProtKB:A0A8V0XCM0
-Select seq ref|XP_030120819.1|	EF-hand domain-containing family member B isoform X1
-
-Scaffold_18__1_contigs__length_25274884.2074884:
-https://jul2019.archive.ensembl.org/Taeniopygia_guttata/Gene/Summary?db=core;g=ENSTGUG00000011087;r=9:23971344-23974600;t=ENSTGUT00000011551
-MGMNKQGKTDPLECGRNPVSPKEISQEKPVVCSDLEFNAVQEESVEPEVGRRSLSSCELP
-ELSEPSGGVSKDLPGAELKSSRDLPESEESRREPQELGSVCSTQSLVLPVVTKPSALQDV
-AKRQKCGSTSYQGLEGFFVGANPKQEKLEAPSSLAAASSPRDRKIPFPGDGLWVSERSLS
-EYADDSVVQGVLASQLSRAANPFQAQNQLSHLMAASM
-ZBBX
-UniProt:A0A8V0XAB2
-
-#######################################################
-```{r}
-beak_width_gene <- beak_width %>% filter(beak_width$V12=="gene")
-```
-https://jul2019.archive.ensembl.org/Taeniopygia_guttata/Gene/Summary?db=core;g=ENSTGUG00000018334;r=1:30143374-30152156;t=ENSTGUT00000019205
-SSSLTEAKEFVKRLRRQTDLCNMVKTVRALLNNNSTVTVLRSGLHAIFKEKSLDVTKDLF
-QEKSRNPKKRQRNIQLKCLKNFISSLASSTDIQDLLSCLSSDLQTFVIKPSKNKEAFKEQ
-ASDFMLKWSLLLSNVGKILTINRTESFG 
-RFX8
-UniProt:A0A8V0YKD9
-
-
-```{r}
-nare_length_gene <- nare_length %>% filter(nare_length$V12=="gene")
-```
-Got an unexpected output from this that doesn't seem to have any information.
-
-```{r}
-wing_gene <- wing_chord %>% filter(wing_chord$V12=="gene")
-```
-
-Jeez, 945 genes.... Gotta filter by location for this I think.... Filtering for those with start positions less than or equal to 25kb away from the position of the SNP.
-
-```{r}
-wing_close_genes <- wing_gene %>% filter(wing_gene$V2-wing_gene$V6 <=25000)
-nrow(wing_close_genes)
-```
-
-Still have a ton (534), so let me be a bit more stringent. Let's try 10KB, that's what Marina used based on her LD Decay profile.
-
-```{r}
-wing_close_genes <- wing_gene %>% filter(wing_gene$V2-wing_gene$V6 <=10000)
-nrow(wing_close_genes)
-```
-Got it down to 340. Maybe I'll try narrowing it down a bit more to protein coding genes only...
-
-```{r}
-df <- separate(wing_close_genes, V14, into = paste0("V14_", 1:6), sep = "; ")
+df <- separate(bill_close_genes, V14, into = paste0("V14_", 1:6), sep = "; ")
 
 # Add column names
 colnames(df)[grep("^V14_", colnames(df))] <- c("gene_id", "gene_version", "gene_name", "gene_source", "gene_biotype", "additional_info")
 
-wing_close_genes <- data.frame(wing_close_genes[,1:13], df, wing_close_genes$V15)
-head(wing_close_genes)
+bill_close_genes <- data.frame(bill_close_genes[,1:13], df, bill_close_genes$V15)
+head(bill_close_genes)
 
-wing_pt_coding <- wing_close_genes %>% filter(wing_close_genes$gene_biotype=="gene_biotype protein_coding;")
-nrow(wing_pt_coding)
+#bill_pt_coding <- bill_close_genes %>% filter(bill_close_genes$gene_biotype=="gene_biotype protein_coding;")
+nrow(bill_pt_coding)
+
+bill_gene_names <- data.frame(bill_close_genes$V4,bill_close_genes$gene_id, bill_close_genes$gene_name )
+write.table(bill_gene_names, "/Users/ericarobertson/Desktop/GCRF/GCRF-Present/GenomicPipeline/data/genes/bill_PC_genes.txt", quote=F)
 ```
-Okay I think I can work with 197. And actually, if you narrow this down to unique things it's only 46! Which is totally reasonable. Going to get that as a text file and plug it into Gene Ontology Resource.
+
+1 Scaffold_2__1_contigs__length_114774641.103228656 gene_id ENSTGUG00000007352 gene_name PHEX
+2 Scaffold_2__1_contigs__length_114774641.85189033 gene_id ENSTGUG00000010196 gene_name INPP4A
+3 Scaffold_23__1_contigs__length_18116493.1385210 gene_id ENSTGUG00000000148 gene_source ensembl
+4 Scaffold_23__1_contigs__length_18116493.2449928 gene_id ENSTGUG00000000288 gene_name UBTD2
+5 Scaffold_23__1_contigs__length_18116493.13852104 gene_id ENSTGUG00000018098 gene_source ensembl
+6 Scaffold_1__1_contigs__length_151072562.108192624 gene_id ENSTGUG00000006368 gene_name PRL
+7 Scaffold_1__1_contigs__length_151072562.138869993 gene_id ENSTGUG00000009758 gene_name APCDD1
+
+Some of these don't have gene names already put in for them.
+
+```{r, feather_genes}
+head(feather_PC)
+feather_PC_genes <- feather_PC %>% filter(feather_PC$V12=="gene")
+
+feather_close_genes <- feather_PC_genes %>% filter(feather_PC_genes$V2-feather_PC_genes$V6 <=25000)
+nrow(feather_close_genes)
+
+df <- separate(feather_close_genes, V14, into = paste0("V14_", 1:6), sep = "; ")
+
+# Add column names
+colnames(df)[grep("^V14_", colnames(df))] <- c("gene_id", "gene_version", "gene_name", "gene_source", "gene_biotype", "additional_info")
+
+feather_close_genes <- data.frame(feather_close_genes[,1:13], df, feather_close_genes$V15)
+head(feather_close_genes)
+
+#feather_pt_coding <- feather_close_genes %>% filter(feather_close_genes$gene_biotype=="gene_biotype protein_coding;")
+#nrow(feather_pt_coding)
+
+feather_gene_names <- data.frame(feather_close_genes$V4,feather_close_genes$gene_id, feather_close_genes$gene_name)
+write.table(feather_gene_names, "/Users/ericarobertson/Desktop/GCRF/GCRF-Present/GenomicPipeline/data/genes/feather_PC_genes.txt", quote = F)
+```
+1 Scaffold_1__1_contigs__length_151072562.146593939 gene_id ENSTGUG00000010651 gene_source ensembl
+2 Scaffold_5__1_contigs__length_71959612.65589803 gene_id ENSTGUG00000001929 gene_name QRFPR
+
+Again, the first one doesn't have a gene name.
+
+```{r, beak_length_genes}
+head(beak_length)
+beak_length_genes <- beak_length %>% filter(beak_length$V12=="gene")
+
+beak_close_genes <- beak_length_genes %>% filter(beak_length_genes$V2-beak_length_genes$V6 <=25000)
+nrow(beak_close_genes)
+
+df <- separate(beak_close_genes, V14, into = paste0("V14_", 1:6), sep = "; ")
+
+# Add column names
+colnames(df)[grep("^V14_", colnames(df))] <- c("gene_id", "gene_version", "gene_ID", "gene_source", "gene_biotype", "additional_info")
+
+beak_close_genes <- data.frame(beak_close_genes[,1:13], df, beak_close_genes$V15)
+head(beak_close_genes)
+
+#feather_pt_coding <- beak_close_genes %>% filter(feather_close_genes$gene_biotype=="gene_biotype protein_coding;")
+#nrow(feather_pt_coding)
+
+beak_gene_names <- data.frame(beak_close_genes$V4,beak_close_genes$gene_id)
+write.table(beak_gene_names, "/Users/ericarobertson/Desktop/GCRF/GCRF-Present/GenomicPipeline/data/genes/beak_length_genes.txt", quote=F)
+```
+1 Scaffold_1__1_contigs__length_151072562.39837818 gene_id ENSTGUG00000000374 gene_name CTDSPL
+
+Again, no gene name...
+
+The tail length is weird, bedtools closests seems to not have given me any information in an output...
+
+### Bill PC Genes
+1 Scaffold_2__1_contigs__length_114774641.103228656 gene_id ENSTGUG00000007352 gene_name PHEX
+2 Scaffold_2__1_contigs__length_114774641.85189033 gene_id ENSTGUG00000010196 gene_name INPP4A
+3 Scaffold_23__1_contigs__length_18116493.1385210 gene_id ENSTGUG00000000148 gene_name ARHGAP26
+4 Scaffold_23__1_contigs__length_18116493.2449928 gene_id ENSTGUG00000000288 gene_name UBTD2
+6 Scaffold_1__1_contigs__length_151072562.108192624 gene_id ENSTGUG00000006368 gene_name PRL
+7 Scaffold_1__1_contigs__length_151072562.138869993 gene_id ENSTGUG00000009758 gene_name APCDD1
+
+5 Scaffold_23__1_contigs__length_18116493.13852104 gene_id ENSTGUG00000018098 gene_source ensembl
+This one is being flagged as miRNA so I'm going to ignore it, I can't find a gene for it.
+
+### Feather PC Genes
+1 Scaffold_1__1_contigs__length_151072562.146593939 gene_id ENSTGUG00000010651 gene_name DSC1
+2 Scaffold_5__1_contigs__length_71959612.65589803 gene_id ENSTGUG00000001929 gene_name QRFPR
+
+# FINAL FIGURES
+## ARHGAP26 Gene
+Rho GAP family also showed up in Matt's paper
+
+Scaffold_23__1_contigs__length_18116493	1385210	.	G	A	.	PASS	.	GT	0|0	0|0	0|0	0|0	0|0	0|0	0|0	0|0	0|0	0|0	0|0	1|1	0|0	0|0	0|0	0|0	0|0	0|0	0|0	0|0	0|0	0|0	0|0	0|0	0|0	0|1	0|0	1|0	0|0	1|0	0|0	0|0	1|1	1|1	0|0	0|0	0|0	0|0	0|0	0|0	0|0	0|0	0|0	0|0	0|0	0|1	0|0	0|0	0|0	0|0	0|1	0|0	0|0	0|0	0|0	0|0	1|0	0|0	0|0	0|0	0|0	0|0	0|0	0|0	0|0	0|0	0|0	1|1	0|0	0|0	0|0	0|0	0|0	1|0	0|0	0|0	0|0	0|0	0|0	0|0	0|0	0|0	0|0	0|0	0|0	0|0	0|0	0|0	0|0
+```{r}
+ARHGAP26 <- bill.results_list[[7]]
+y_breaks <- pretty(range(ARHGAP26$PHENOTYPE), n=5)
+x_breaks <- seq(min(ARHGAP26$GENOTYPE), max(ARHGAP26$GENOTYPE), length.out = 3)
+group_colors <- c("1" = "lightblue3", "2" = "tomato2")
+my_title <- expression(paste("Bill Morphology vs ", italic("ARHGAP26")))
+
+ARHGAP26.plot <- ggplot(ARHGAP26, aes(x = GENOTYPE, y = PHENOTYPE, color = FID)) +
+  geom_point() +   # Add data points with color aesthetic
+  geom_smooth(method = "lm", se = TRUE, color = "grey3") +  # Add smoothed trend line with confidence intervals
+  labs(x = "Genotype", y = "Feather Morphology PC1") +  # Add axis labels
+  ggtitle(my_title) +
+  scale_y_continuous(breaks = y_breaks) +
+  scale_x_continuous(breaks = x_breaks, labels = c("GG", "GA", "AA")) +
+  scale_color_manual(labels = c("WMNT", "PIPA"), values=group_colors) +  # Customize legend labels
+  theme_classic()
+plot(ARHGAP26.plot)
+ggsave("ARHGAP26_plot.png", plot=ARHGAP26.plot, path = "~/Desktop/GCRF/GCRF-Present/figures/", width=9, height=7)
+```
+
+## APCDDI Gene
+Expressed in human hair follicles
+Also found in Gamboa 2021
+
+Scaffold_1__1_contigs__length_151072562	138869993	.	C	T	.	PASS	.	GT	0|0	0|0	0|0	0|0	0|0	1|1	0|1	0|0	0|0	1|1	0|0	0|0	0|0	0|1	0|0	0|0	0|0	0|0	0|0	0|0	0|0	0|0	1|0	1|0	0|0	1|0	0|0	1|1	0|0	0|0	0|0	1|1	0|0	0|0	1|0	0|0	0|1	0|0	0|0	0|0	0|0	0|0	0|1	0|0	0|0	0|0	0|0	0|1	0|0	0|0	0|0	0|0	0|0	1|0	0|0	0|1	0|0	0|0	0|0	0|0	0|0	0|0	0|0	0|0	0|0	0|1	1|0	0|0	1|0	0|0	0|0	0|0	0|0	1|0	0|1	0|0	0|0	0|0	0|1	0|0	0|1	0|0	1|0	1|0	0|0	1|1	1|1	0|0	0|0
 
 ```{r}
-wing_gene_names <- unique(wing_pt_coding$gene_name)
-write.table(wing_gene_names, "/Users/ericarobertson/Desktop/GCRF/GCRF-Present/GenomicPipeline/data/genes/wing_chord_genes.txt")
+APCDDI <- bill.results_list[[2]]
+y_breaks <- pretty(range(APCDDI$PHENOTYPE), n=5)
+x_breaks <- seq(min(APCDDI$GENOTYPE), max(APCDDI$GENOTYPE), length.out = 3)
+group_colors <- c("1" = "lightblue3", "2" = "tomato2")
+my_title <- expression(paste("Bill Morphology vs ", italic("APCDDI")))
+
+APCDDI.plot <- ggplot(APCDDI, aes(x = GENOTYPE, y = PHENOTYPE, color = FID)) +
+  geom_point() +   # Add data points with color aesthetic
+  geom_smooth(method = "lm", se = TRUE, color = "grey3") +  # Add smoothed trend line with confidence intervals
+  labs(x = "Genotype", y = "Feather Morphology PC1") +  # Add axis labels
+  ggtitle(my_title) +
+  scale_y_continuous(breaks = y_breaks) +
+  scale_x_continuous(breaks = x_breaks, labels = c("CC", "CT", "TT")) +
+  scale_color_manual(labels = c("WMNT", "PIPA"), values=group_colors) +  # Customize legend labels
+  theme_classic()
+plot(ARHGAP26.plot)
+ggsave("APCDDI_plot.png", plot=APCDDI.plot, path = "~/Desktop/GCRF/GCRF-Present/figures/", width=9, height=7)
 ```
-Fiddled with that in terminal to get just the wing names: wing_chord_gene_names.txt
-
-Into Gene Ontology. So with corrections for multiple testing there doesn't seem to be anything significant, but if I don't do those corrections there's a crap ton of stuff.
-
-Positive regulation of cyclin-dependent protein serine/threonine kinda activity is number one...
-
-
-
-
-
-
-
-
-
-
-
 
 
 
