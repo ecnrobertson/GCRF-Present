@@ -1,0 +1,259 @@
+---
+title: "GCRF_Pop_Structure"
+output: html_document
+date: "2023-12-30"
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "~/Desktop/GCRF/GCRF-Present/")
+```
+
+# OLD method
+INTRODUCTION
+Here I will be going through the steps for creating a PCA using genotype information to assess if there is population structure in my data. I'm starting with vcf files that have been filtered as follows
+-only biallilic alleles
+-only SNPs
+-fraction of missing genotypes is <25%
+-min allele freq is 0.05
+-max allele freq is .95
+-depth greater than or equal to 4
+
+Potential issue: I haven't downsampeled, so coverage differences might become an issue.
+
+Following steps laid out by chatGPT, so we'll see how it goes. I'm using my conda bioninf environment which has bcftools, vcftools, etc downloaded and GWAS environment which has PLINK and (eventually) GEMMA downloaded.
+
+My data is currently structured as follows:
+raw bam files: /scratch/alpine/ericacnr@colostate.edu/GCRF/Fastq/bam/mkdup_bam
+filtered VCF files: /scratch/alpine/ericacnr@colostate.edu/GCRF/Fastq/genotypes/called_genotypes/filtered
+PCA files: /scratch/alpine/ericacnr@colostate.edu/GCRF/Fastq/PCA
+
+
+
+1. Data Preparation:
+Convert VCF to PLINK Format:
+I'm going to be doing this on my merged VCF file, which has been filtered following the information for BEAGLE_imputation and VSQ hard filtering. 
+This is a stupidly long file name: GCRF.merged_gatk.SNP.filtered_gatkVQSR2.PASS.8miss.rm_scaf_lth10.vcf.recode.vcf
+
+```{}
+# Install and use BCFtools to convert VCF to PLINK format
+bcftools view --output-type v --output-file ../../../PCA/GCRF_merged_data_plink.vcf GCRF.merged_gatk.SNP.filtered_gatkVQSR2.PASS.8miss.rm_scaf_lth10.vcf.recode.vcf
+
+cd ../../../PCA/
+conda deactivate
+conda activate GWAS
+
+plink --vcf GCRF_merged_data_plink.vcf --allow-extra-chr --make-bed --out GCRF_merged_data_plink
+#--allow-extra-chr is because of the way the chromosome codes are (maybe with underscores? it's not happy)
+```
+I now have the following files:
+GCRF_merged_data_plink.bed  
+GCRF_merged_data_plink.log    
+GCRF_merged_data_plink.vcf
+GCRF_merged_data_plink.bim  
+GCRF_merged_data_plink.nosex
+GCRF_merged_data_plink.fam  
+GCRF_merged_data_plink.save
+
+2. Calculate Genetic Distances:
+Generate Genetic Distances:
+```{r}
+plink --bfile GCRF_merged_data_plink --allow-extra-chr --distance square 1-ibs --out merged_data_distances
+```
+This created:
+merged_data_distances.log
+merged_data_distances.mdist
+merged_data_distances.mdist.id
+merged_data_distances.nosex
+
+3. Run a PCA:
+```{}
+plink --bfile ./merged_data_distances --pca --out merged_data_pca
+
+```
+
+
+# PCA
+https://speciationgenomics.github.io/pca/
+The vcf file I'll be working with is GCRF.mkdp0_merged_25missing_min.5max.95_depth4_vqsr_gl_impute4.1.vcf.gz
+/scratch/alpine/ericacnr@colostate.edu/GCRF/GWAS/impute_new/GCRF.mkdp0_merged_25missing_min.5max.95_depth4_vqsr_gl_impute4.1.vcf.gz
+
+```{}
+vcf=/scratch/alpine/ericacnr@colostate.edu/GCRF/GWAS/impute_new/GCRF.mkdp0_merged_25missing_min.5max.95_depth4_vqsr_gl_impute4.1.vcf.gz
+
+# perform linkage pruning - i.e. identify prune sites
+plink --vcf $vcf --double-id --allow-extra-chr --allow-no-sex \
+--set-missing-var-ids @:# \
+--indep-pairwise 50 10 0.1 --out GCRF.merged.filtered.imputed.ld_pruned
+```
+So for our plink command, we did the following:
+--vcf - specified the location of our VCF file.
+--double-id - told plink to duplicate the id of our samples (this is because plink typically expects a family and individual id - i.e. for pedigree data - this is not necessary for us.
+--allow-extra-chr - allow additional chromosomes beyond the human chromosome set. This is necessary as otherwise plink expects chromosomes 1-22 and the human X chromosome.
+--set-missing-var-ids - also necessary to set a variant ID for our SNPs. Human and model organisms often have annotated SNP names and so plink will look for these. We do not have them so instead we set ours to default to chromosome:position which can be achieved in plink by setting the option @:# - see here for more info.
+--indep-pairwise - finally we are actually on the command that performs our linkage pruning! The first argument, 50 denotes we have set a window of 50 Kb. The second argument, 10 is our window step size - meaning we move 10 bp each time we calculate linkage. Finally, we set an r2 threshold - i.e. the threshold of linkage we are willing to tolerate. Here we prune any variables that show an r2 of greater than 0.1.
+--out Produce the prefix for the output data.
+
+Pruning complete.  6824588 of 7487128 variants removed.
+
+This seems like a lot! Unsure though.
+
+```{}
+plink --vcf $vcf --double-id --allow-extra-chr --allow-no-sex --set-missing-var-ids @:# \
+--extract ../PCA/GCRF.merged.filtered.imputed.ld_pruned.prune.in \
+--make-bed --pca --out GCRF
+```
+--extract - this just lets plink know we want to extract only these positions from our VCF - in other words, the analysis will only be conducted on these.
+--make-bed - this is necessary to write out some additional files for another type of population structure analysis - a model based approach with admixture.
+--pca - fairly self explanatory, this tells plink to calculate a principal components analysis.
+
+PCA output:
+.eigenval - the eigenvalues from our analysis
+.eigenvec- the eigenvectors from our analysis
+plink binary output:
+.bed - the cichlids bed file - this is a binary file necessary for admixture analysis. It is essentially the genotypes of the pruned dataset recoded as 1s and 0s.
+.bim - a map file (i.e. information file) of the variants contained in the bed file.
+.fam - a map file for the individuals contained in the bed file.
+
+```{r}
+library(tidyverse)
+pca <- read_table2("PCA/GCRF.merged.filtered.imputed.ld_pruned.prune.in.eigenvec", col_names = FALSE)
+eigenval <- scan("PCA/GCRF.merged.filtered.imputed.ld_pruned.prune.in.eigenval")
+
+# sort out the pca data
+# remove nuisance column
+pca <- pca[,-1]
+# set names
+names(pca)[1] <- "ind"
+names(pca)[2:ncol(pca)] <- paste0("PC", 1:(ncol(pca)-1))
+
+```
+
+```{r}
+id.loc <- read.table("../GenomicPipeline/locID_num.txt")
+loc <- as.factor(id.loc$V1)
+pca$loc <- loc
+pca$spp <- "GCRF"
+spp <- pca$spp
+
+# combine - if you want to plot each in different colours
+spp_loc <- paste0("GCRF", "_", id.loc$V1)
+
+pca <- as_tibble(data.frame(pca, spp_loc))
+```
+
+```{r}
+pve <- data.frame(PC = 1:20, pve = eigenval/sum(eigenval)*100)
+
+# make plot
+a <- ggplot(pve, aes(PC, pve)) + geom_bar(stat = "identity")
+a + ylab("Percentage variance explained") + theme_light()
+
+```
+
+```{r}
+b <- ggplot(pca, aes(PC1, PC2, col = loc, shape = loc)) + geom_point(size = 3)
+b <- b + scale_colour_manual(values = c("red", "blue"))
+b <- b + coord_equal() + theme_light()
+b + xlab(paste0("PC1 (", signif(pve$pve[1], 3), "%)")) + ylab(paste0("PC2 (", signif(pve$pve[2], 3), "%)"))
+```
+
+
+
+# ADMIXTURE
+Following the first part of this:
+https://speciationgenomics.github.io/ADMIXTURE/
+Then plotting from this:
+https://owensgl.github.io/biol525D/Topic_8-9/plotting_structure.html
+
+Using the LD pruned SNPs from before.
+
+```{}
+plink --vcf $vcf --double-id --allow-extra-chr --allow-no-sex --set-missing-var-ids @:# \
+--extract ../PCA/GCRF.merged.filtered.imputed.ld_pruned.prune.in \
+--make-bed --pca --out GCRF
+
+# ADMIXTURE does not accept chromosome names that are not human chromosomes. We will thus just exchange the first column by 0
+awk '{$1="0";print $0}' GCRF.bim > GCRF.bim.tmp
+mv GCRF.bim.tmp GCRF.bim
+```
+
+Running admixture with k=2 and k=1
+```{}
+admixture --cv GCRF.bed 2 > log2.out
+admixture --cv GCRF.bed 1 > log2.out
+admicture --cv GCRF.bed 3 > log3.out
+```
+To identify the best value of k clusters which is the value with lowest cross-validation error, we need to collect the cv errors. 
+
+```{}
+awk '/CV/ {print $3,$4}' *out | cut -c 4,7-20 > GCRF.cv.error
+```
+1 0.65383
+2 0.68887
+3 0.72070
+
+To make plotting easier, we can make a file with the individual names in one column and the species names in the second column. As the species name is in the individual name, it is very easy to extract the species name from the individual name:
+```{}
+awk '{print "GCRF", $2}' GCRF.nosex > GCRF.list
+```
+
+Did k=1-3
+Moved the .Q files and the list over.
+
+```{r}
+samplelist <- read_table("ADMIXTURE/GCRF.list",
+                       col_names = c("spp", "sample"))
+all_data <- tibble(sample=character(),
+                   k=numeric(),
+                   Q=character(),
+                   value=numeric())
+
+for (k in 1:3){
+    data <- read_delim(paste0("ADMIXTURE/GCRF.",k,".Q"),
+                       col_names = paste0("Q",seq(1:k)),
+                       delim=" ")
+    data$sample <- samplelist$sample
+    data$k <- k
+    
+    #This step converts from wide to long.
+    data %>% gather(Q, value, -sample,-k) -> data
+    all_data <- rbind(all_data,data)
+}
+
+head(all_data)
+
+all_data %>%
+  filter(k == 2) %>%
+  ggplot(.,aes(x=sample,y=value,fill=factor(Q))) + 
+  geom_bar(stat="identity",position="stack") +
+  xlab("Sample") + ylab("Ancestry") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1)) +
+  scale_fill_brewer(palette="Set1",name="K",
+                    labels=c("1","2"))
+```
+
+
+
+```{r}
+all_data %>%
+  ggplot(.,aes(x=sample,y=value,fill=factor(Q))) + 
+  geom_bar(stat="identity",position="stack") +
+  xlab("Sample") + ylab("Ancestry") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1)) +
+  scale_fill_brewer(palette="Set1",name="K",
+                    labels=seq(1:5)) +
+  facet_wrap(~k,ncol=1)
+
+all_data %>%
+  ggplot(aes(x = sample, y = value, fill = factor(Q))) + 
+  geom_bar(stat = "identity", position = "stack") +
+  xlab("Sample") + ylab("Ancestry") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1, size = 5)) +  # Adjust size here
+  scale_fill_brewer(palette = "Set1", name = "K", labels = seq(1:5)) +
+  facet_wrap(~k, ncol = 1)
+```
+
+So what I'm getting from this is that there are a couple individuals (like in the PCA) that are separating out but overarchingly it seems like k=1 makes the most sense.
