@@ -21,7 +21,7 @@ library(rstatix)
 
 # MORPHOLOGY PCA (Undivided)
 ```{r}
-morpho <- read.csv("~/Desktop/GCRF/R data/GCRF_morphology.csv")
+morpho <- read.csv("~/Desktop/GCRF/GCRF-Present/R data/GCRF_morphology.csv")
 morpho <- morpho[1:189,]
 
 morpho_num <- as.data.frame(cbind(as.numeric(morpho$wing), as.numeric(morpho$tarsus), as.numeric(morpho$weight), as.numeric(morpho$tail_length), as.numeric(morpho$nare_length), as.numeric(morpho$bristle_length), as.numeric(morpho$beak_depth), as.numeric(morpho$beak_width), as.numeric(morpho$nare_end_length), as.numeric(morpho$culmen_end_length)))
@@ -98,7 +98,7 @@ fviz_pca_ind(morpho.pca,
 To get residual values that will be corrected for body size and can be used in the PCA
 
 ```{r}
-morp.sex.og <- read.csv("~/Desktop/GCRF/R data/GCRF_morpho_sex.csv")
+morp.sex.og <- read.csv("~/Desktop/GCRF/GCRF-Present/R data/GCRF_morpho_sex.csv")
 #morp.sex$site, morp.sex$Sex, morp.sex$BGP_ID,
 morp.sex <- as.data.frame(cbind(as.numeric(morp.sex.og$wing), as.numeric(morp.sex.og$tarsus), as.numeric(morp.sex.og$weight), as.numeric(morp.sex.og$tail_length), as.numeric(morp.sex.og$nare_length), as.numeric(morp.sex.og$bristle_length), as.numeric(morp.sex.og$beak_depth), as.numeric(morp.sex.og$beak_width), as.numeric(morp.sex.og$culmen_end_length)))
 morp.sex <- as.data.frame(cbind(morp.sex.og$site, morp.sex.og$Sex, morp.sex.og$BGP_ID, morp.sex))
@@ -320,6 +320,11 @@ male.res <- as.data.frame(cbind(as.numeric(wing.m.res), as.numeric(tail.m.res), 
 colnames(male.res) <- c("wing", "tail", "nare", "bristle_lenght", "bill_lenght", "bill_depth", "bill_width", "tarsus")
 ```
 
+```{r}
+male.res.IID <- data.frame(males$BGP_ID, male.res)
+colnames(male.res.IID) <- c("BGP_ID", "wing", "tail", "nare", "bristle_length", "bill_length", "bill_depth", "bill_width", "tarsus")
+```
+
 ## Male PCA
 ```{r}
 male.pca <- PCA(male.res,  scale.unit=T, graph=F)
@@ -340,6 +345,7 @@ fviz_pca_ind(male.pca,
              )
 
 ```
+
 
 # T TESTS USING THE RESIDUALS
 ## Males
