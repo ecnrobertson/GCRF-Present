@@ -645,6 +645,7 @@ morpho_num <- morpho_avg[,3:6]
 
 
 corr_m <- cor(morpho_num)
+corr_m
 ggcorrplot(corr_m)
 ```
 
@@ -1828,6 +1829,90 @@ cat GCRF.SNP.imputed_gt.ZFchr.sorted.bed | grep -E "Scaffold_1__1_contigs__lengt
 
 bedtools closest -a beak_length_snp.bed -b /scratch/alpine/ericacnr@colostate.edu/GCRF/Reference/ZEFI_annotation/Taeniopygia_guttata_sorted.bed -d > beak_length_distance.bed
 ```
+## Linkage Decay to determine filtering parameteres for genes
+
+Using NGSLD to figure out the linkage disequilibrium. I think ideally I would be running this on a vcf that has been fixed to be at the chromosome level but I'm going to try and dial everything in before I do that.
+
+Okay, so on second thought I'm going to try and new program (https://doi.org/10.1093/bioinformatics/bty875) called PopLDdecay.
+
+```{}
+module load gcc/10.3.0
+module load zlib
+
+/projects/ericacnr@colostate.edu/PopLDdecay/bin/PopLDdecay -InVCF GCRF.mkdp0_merged_25missing_min.5max.95_depth4_vqsr_gl_impute4.1.vcf.gz -OutStat GCRF.LD.decay.stat
+```
+
+Running this is as a script cause I think it's going to take up a lot of memory.
+
+Also going to try using PLINK since that's such a delightful program. Following this tutorial: https://speciationgenomics.github.io/ld_decay/
+
+```{}
+mkdir ../ld_decay
+VCF=/scratch/alpine/ericacnr@colostate.edu/GCRF/GWAS/impute_new/GCRF.mkdp0_merged_25missing_min.5max.95_depth4_vqsr_gl_impute4.1.vcf.gz
+cd ../ld_decay/
+```
+
+Going to run this on just the first scaffold, Scaffold 1. Scaffold_1__1_contigs__length_151072562
+```{}
+plink --vcf $VCF --double-id --allow-extra-chr --allow-no-sex \
+--set-missing-var-ids @:# \
+--chr Scaffold_1__1_contigs__length_151072562 \
+--thin 0.1 -r2 gz --ld-window 100 --ld-window-kb 300 \
+--ld-window-r2 0 \
+--make-bed --out GCRF_scf1
+```
+--vcf - specified the location of our VCF file.
+--double-id - told plink to duplicate the id of our samples (this is because plink typically expects a family and individual id - i.e. for pedigree data - this is not necessary for us.
+--allow-extra-chr - allow additional chromosomes beyond the human chromosome set. This is necessary as otherwise plink expects chromosomes 1-22 and the human X chromosome.
+--set-missing-var-ids - also necessary to set a variant ID for our SNPs. Human and model organisms often have annotated SNP names and so plink will look for these. We do not have them so instead we set ours to default to chromosome:position which can be achieved in plink by setting the option @:# - see here for more info.
+--chr - an option to choose the chromosome we are running the analysis on. Here we are only performing it on Scaffold 1.
+--thin - thin randomly thins out the data - i.e. it randomly retains p proportion of the data. Here we set that to 0.1 or 10%. This means that each site has a 10% probability of remaining in the dataset. This is done to ensure the analysis runs quickly and our output isn’t too big as it can quickly get out of hand!
+--r2 - finally we’re on to the options for LD! This tells plink to produce squared correlation coefficients. We also provide the argument gz in order to ensure the output is compressed. This is very important as it is easy to produce EXTREMELY large files.
+--ld-window - this allows us to set the size of the lower end of the LD window. In this case, we set it to 100 bp - i.e. any sites with < 100 sites between them are ignored.
+--ld-window-kb - this is the upper end of the LD window. Here we set it to 300, meaning that we ignore any two sites more than 300kb apart in the genome.
+--ld-window-r2 - the final LD command - this sets a filter on the final output but we want all values of LD to be written out, so we set it to 0.
+--make-bed - this just makes a plink bedfile for future analyses
+--out Produce the prefix for the output data.
+
+Run the python script...
+```{}
+acompile
+module load python
+python ld_decay_calc.py -i GCRF_scf1.ld.gz -o GCRF_scf1
+```
+
+```{r}
+rm(list = ls())
+
+library(tidyverse)
+
+# set path
+my_bins <- "./GCRF-Present/LD_decay/GCRF_scf1.ld_decay_bins"
+
+# read in data
+ld_bins <- read_tsv(my_bins)
+
+# plot LD decay
+ggplot(ld_bins, aes(distance, avg_R2)) + geom_line() +
+  xlab("Distance (bp)") + ylab(expression(italic(r)^2))
+
+```
+Repeating this again for scaffold 2 and 3 to see if it's consistent across the long ones but based on this using 100kb as my window, which is great.
+
+```{r}
+rm(list = ls())
+
+# set path
+my_bins <- "~/Desktop/GCRF/GCRF-Present/LD_decay/GCRF_scf2.ld_decay_bins"
+
+# read in data
+ld_bins <- read_tsv(my_bins)
+
+# plot LD decay
+ggplot(ld_bins, aes(distance, avg_R2)) + geom_line() +
+  xlab("Distance (bp)") + ylab(expression(italic(r)^2))
+
+```
 
 ### OLD WINGCHORD STUFF
 Now I'm going to try and tackle the wingchord snps...
@@ -1857,7 +1942,13 @@ tail_length <- read.table("~/Desktop/GCRF/GCRF-Present/GenomicPipeline/data/gene
 head(bill_PC)
 bill_PC_genes <- bill_PC %>% filter(bill_PC$V12=="gene")
 
-bill_close_genes <- bill_PC_genes %>% filter(bill_PC_genes$V2-bill_PC_genes$V6 <=25000)
+threshold <- 100000
+
+# Filter for SNPs within 100000kb of gene start or stop, or inside the gene
+bill_close_genes <- bill_PC_genes %>%
+  filter((V2 >= (V6 - threshold) & V2 <= (V6 + threshold)) |
+         (V2 >= (V7 - threshold) & V2 <= (V7 + threshold)) |
+         (V2 >= V6 & V2 <= V7))
 nrow(bill_close_genes)
 
 df <- separate(bill_close_genes, V14, into = paste0("V14_", 1:6), sep = "; ")
@@ -1869,19 +1960,18 @@ bill_close_genes <- data.frame(bill_close_genes[,1:13], df, bill_close_genes$V15
 head(bill_close_genes)
 
 #bill_pt_coding <- bill_close_genes %>% filter(bill_close_genes$gene_biotype=="gene_biotype protein_coding;")
-nrow(bill_pt_coding)
+#nrow(bill_pt_coding)
 
 bill_gene_names <- data.frame(bill_close_genes$V4,bill_close_genes$gene_id, bill_close_genes$gene_name )
 write.table(bill_gene_names, "/Users/ericarobertson/Desktop/GCRF/GCRF-Present/GenomicPipeline/data/genes/bill_PC_genes.txt", quote=F)
 ```
-
-1 Scaffold_2__1_contigs__length_114774641.103228656 gene_id ENSTGUG00000007352 gene_name PHEX
-2 Scaffold_2__1_contigs__length_114774641.85189033 gene_id ENSTGUG00000010196 gene_name INPP4A
-3 Scaffold_23__1_contigs__length_18116493.1385210 gene_id ENSTGUG00000000148 gene_source ensembl
-4 Scaffold_23__1_contigs__length_18116493.2449928 gene_id ENSTGUG00000000288 gene_name UBTD2
-5 Scaffold_23__1_contigs__length_18116493.13852104 gene_id ENSTGUG00000018098 gene_source ensembl
-6 Scaffold_1__1_contigs__length_151072562.108192624 gene_id ENSTGUG00000006368 gene_name PRL
-7 Scaffold_1__1_contigs__length_151072562.138869993 gene_id ENSTGUG00000009758 gene_name APCDD1
+1 Scaffold_2__1_contigs__length_114774641.85189033 gene_id ENSTGUG00000010196 gene_name INPP4A
+2 Scaffold_23__1_contigs__length_18116493.1385210 gene_id ENSTGUG00000000148 
+3 Scaffold_23__1_contigs__length_18116493.2449928 gene_id ENSTGUG00000000288 gene_name UBTD2
+4 Scaffold_1__1_contigs__length_151072562.54132477 gene_id ENSTGUG00000001172 gene_name KIAA1217
+5 Scaffold_1__1_contigs__length_151072562.138869993 gene_id ENSTGUG00000009758 gene_name APCDD1
+6 Scaffold_5__1_contigs__length_71959612.14244530 gene_id ENSTGUG00000009822 gene_name CPEB2
+7 Scaffold_7__1_contigs__length_62267870.31872111 gene_id ENSTGUG00000011762 
 
 Some of these don't have gene names already put in for them.
 
@@ -1889,7 +1979,13 @@ Some of these don't have gene names already put in for them.
 head(feather_PC)
 feather_PC_genes <- feather_PC %>% filter(feather_PC$V12=="gene")
 
-feather_close_genes <- feather_PC_genes %>% filter(feather_PC_genes$V2-feather_PC_genes$V6 <=25000)
+threshold <- 100000
+
+# Filter for SNPs within 100000kb of gene start or stop, or inside the gene
+feather_close_genes <- feather_PC_genes %>%
+  filter((V2 >= (V6 - threshold) & V2 <= (V6 + threshold)) |
+         (V2 >= (V7 - threshold) & V2 <= (V7 + threshold)) |
+         (V2 >= V6 & V2 <= V7))
 nrow(feather_close_genes)
 
 df <- separate(feather_close_genes, V14, into = paste0("V14_", 1:6), sep = "; ")
@@ -1906,8 +2002,13 @@ head(feather_close_genes)
 feather_gene_names <- data.frame(feather_close_genes$V4,feather_close_genes$gene_id, feather_close_genes$gene_name)
 write.table(feather_gene_names, "/Users/ericarobertson/Desktop/GCRF/GCRF-Present/GenomicPipeline/data/genes/feather_PC_genes.txt", quote = F)
 ```
-1 Scaffold_1__1_contigs__length_151072562.146593939 gene_id ENSTGUG00000010651 gene_source ensembl
-2 Scaffold_5__1_contigs__length_71959612.65589803 gene_id ENSTGUG00000001929 gene_name QRFPR
+1 Scaffold_2__1_contigs__length_114774641.92336930 gene_id ENSTGUG00000008693 gene_name COL4A1
+2 Scaffold_2__1_contigs__length_114774641.92336930 gene_id ENSTGUG00000008766 
+3 Scaffold_2__1_contigs__length_114774641.80634326 gene_id ENSTGUG00000010798 
+4 Scaffold_1__1_contigs__length_151072562.128626182 gene_id ENSTGUG00000008527 gene_name GABBR2
+5 Scaffold_3__1_contigs__length_112408489.112330666 gene_id ENSTGUG00000002140 
+6 Scaffold_5__1_contigs__length_71959612.65589803 gene_id ENSTGUG00000001929 gene_name QRFPR
+7 Scaffold_8__1_contigs__length_35685229.25471973 gene_id ENSTGUG00000006250 gene_name RET
 
 Again, the first one doesn't have a gene name.
 
@@ -1915,7 +2016,13 @@ Again, the first one doesn't have a gene name.
 head(beak_length)
 beak_length_genes <- beak_length %>% filter(beak_length$V12=="gene")
 
-beak_close_genes <- beak_length_genes %>% filter(beak_length_genes$V2-beak_length_genes$V6 <=25000)
+threshold <- 100000
+
+# Filter for SNPs within 100000kb of gene start or stop, or inside the gene
+beak_close_genes <- beak_length_genes %>%
+  filter((V2 >= (V6 - threshold) & V2 <= (V6 + threshold)) |
+         (V2 >= (V7 - threshold) & V2 <= (V7 + threshold)) |
+         (V2 >= V6 & V2 <= V7))
 nrow(beak_close_genes)
 
 df <- separate(beak_close_genes, V14, into = paste0("V14_", 1:6), sep = "; ")
@@ -1930,28 +2037,112 @@ head(beak_close_genes)
 #nrow(feather_pt_coding)
 
 beak_gene_names <- data.frame(beak_close_genes$V4,beak_close_genes$gene_id)
+beak_gene_names
 write.table(beak_gene_names, "/Users/ericarobertson/Desktop/GCRF/GCRF-Present/GenomicPipeline/data/genes/beak_length_genes.txt", quote=F)
 ```
-1 Scaffold_1__1_contigs__length_151072562.39837818 gene_id ENSTGUG00000000374 gene_name CTDSPL
-
-Again, no gene name...
-
-The tail length is weird, bedtools closests seems to not have given me any information in an output...
+1 Scaffold_1__1_contigs__length_151072562.39837818 gene_id ENSTGUG00000000374 
 
 ### Bill PC Genes
-1 Scaffold_2__1_contigs__length_114774641.103228656 gene_id ENSTGUG00000007352 gene_name PHEX
-2 Scaffold_2__1_contigs__length_114774641.85189033 gene_id ENSTGUG00000010196 gene_name INPP4A
-3 Scaffold_23__1_contigs__length_18116493.1385210 gene_id ENSTGUG00000000148 gene_name ARHGAP26
-4 Scaffold_23__1_contigs__length_18116493.2449928 gene_id ENSTGUG00000000288 gene_name UBTD2
-6 Scaffold_1__1_contigs__length_151072562.108192624 gene_id ENSTGUG00000006368 gene_name PRL
-7 Scaffold_1__1_contigs__length_151072562.138869993 gene_id ENSTGUG00000009758 gene_name APCDD1
+1 Scaffold_2__1_contigs__length_114774641.85189033 gene_id ENSTGUG00000010196 gene_name INPP4A
+2 Scaffold_23__1_contigs__length_18116493.1385210 gene_id ENSTGUG00000000148 gene_name ARHGAP26
+3 Scaffold_23__1_contigs__length_18116493.2449928 gene_id ENSTGUG00000000288 gene_name UBTD2
+4 Scaffold_1__1_contigs__length_151072562.54132477 gene_id ENSTGUG00000001172 gene_name KIAA1217
+5 Scaffold_1__1_contigs__length_151072562.138869993 gene_id ENSTGUG00000009758 gene_name APCDD1
+6 Scaffold_5__1_contigs__length_71959612.14244530 gene_id ENSTGUG00000009822 gene_name CPEB2
+7 Scaffold_7__1_contigs__length_62267870.31872111 gene_id ENSTGUG00000011762 gene_source ensembl
 
-5 Scaffold_23__1_contigs__length_18116493.13852104 gene_id ENSTGUG00000018098 gene_source ensembl
-This one is being flagged as miRNA so I'm going to ignore it, I can't find a gene for it.
+### bill length genes
+1 Scaffold_1__1_contigs__length_151072562.39837818 gene_id ENSTGUG00000000374
 
 ### Feather PC Genes
-1 Scaffold_1__1_contigs__length_151072562.146593939 gene_id ENSTGUG00000010651 gene_name DSC1
-2 Scaffold_5__1_contigs__length_71959612.65589803 gene_id ENSTGUG00000001929 gene_name QRFPR
+1 Scaffold_2__1_contigs__length_114774641.92336930 gene_id ENSTGUG00000008693 gene_name COL4A1
+2 Scaffold_2__1_contigs__length_114774641.92336930 gene_id ENSTGUG00000008766 
+3 Scaffold_2__1_contigs__length_114774641.80634326 gene_id ENSTGUG00000010798 
+4 Scaffold_1__1_contigs__length_151072562.128626182 gene_id ENSTGUG00000008527 gene_name GABBR2
+5 Scaffold_3__1_contigs__length_112408489.112330666 gene_id ENSTGUG00000002140 
+6 Scaffold_5__1_contigs__length_71959612.65589803 gene_id ENSTGUG00000001929 gene_name QRFPR
+7 Scaffold_8__1_contigs__length_35685229.25471973 gene_id ENSTGUG00000006250 gene_name RET
+
+## Allele freq per population
+
+```{}
+plink --map GCRF_base_file.map_loc.map --ped GCRF_base_file_fin.ped --out GCRF_af_pop --freqx --family --allow-extra-chr --snp Scaffold_1__1_contigs__length_151072562.138869993
+```
+
+So this is just giving me a frequency but I'm not sure which allele it's actually reflecting. So this line of code is the get location 1 allele counts to figure out the frequency and then go back and see what the first line of code is actually showing me. It's the frequency of the least common allele, but it's not always clear which one that is.
+
+```{}
+plink --map GCRF_base_file.map_loc.map --ped GCRF_base_file_fin.ped --out GCRF_af_pop1 --keep-fam family1.txt --freqx --allow-extra-chr --snp Scaffold_1__1_contigs__length_151072562.138869993
+```
+
+CHR     SNP     A1	A2	C(HOM A1)	C(HET)  C(HOM A2)	C(HAP A1)	C(HAP A2)	C(MISSING)
+Scaffold_1__1_contigs__length_151072562 Scaffold_1__1_contigs__length_151072562.138869993	T	C	4	9	30	0	0	0
+
+```{r}
+homT <- 4
+het <- 9
+homC <- 30
+total <- 2*4 + 2*9 + 2*30
+
+Tfreq <- ((homT*2)+het)/total
+Cfreq <- ((homC*2)+het)/total
+Tfreq+Cfreq
+```
+### beak PC allele frequencies
+```{}
+plink --map ../GCRF_base_file.map_loc.map --ped ../GCRF_base_file_fin.ped --out GCRF_af_pop_S2.85189033 --freq --family --allow-extra-chr --snp Scaffold_2__1_contigs__length_114774641.85189033 
+```
+CHR                                                SNP     CLST   A1   A2      MAF    MAC  NCHROBS
+S2   Scaffold_2__1_contigs__length_114774641.85189033        1    T    A   0.3605     31       86
+S2   Scaffold_2__1_contigs__length_114774641.85189033        2    T    A   0.2717     25       92
+
+```{}
+plink --map ../GCRF_base_file.map_loc.map --ped ../GCRF_base_file_fin.ped --out GCRF_af_pop_S2.85189033 --freqx --keep-fam family1.txt --allow-extra-chr --snp Scaffold_2__1_contigs__length_114774641.85189033
+```
+CHR     SNP     A1      A2      C(HOM A1)     C(HET)      C(HOM A2)       C(HAP A1)       C(HAP A2)       C(MISSING)
+S2 S2.85189033   T       A       8              15          20          0       0       0
+```{r}
+Tfreq <- ((8*2)+15)/(8*2 + 2*15 + 20*2)
+Tfreq
+```
+
+```{}
+plink --map ../GCRF_base_file.map_loc.map --ped ../GCRF_base_file_fin.ped --out GCRF_af_pop.S23.1385210 --freq --family --allow-extra-chr --snp Scaffold_23__1_contigs__length_18116493.1385210
+```
+CHR                                               SNP     CLST   A1   A2      MAF    MAC  NCHROBS
+S23   Scaffold_23__1_contigs__length_18116493.1385210        1    A    G   0.1163     10       86
+S23   Scaffold_23__1_contigs__length_18116493.1385210        2    A    G  0.05435      5       92
+```{}
+plink --map ../GCRF_base_file.map_loc.map --ped ../GCRF_base_file_fin.ped --out GCRF_af_pop.S23.2449928 --freq --family --allow-extra-chr --snp Scaffold_23__1_contigs__length_18116493.2449928
+```
+CHR                                               SNP     CLST   A1   A2      MAF    MAC  NCHROBS
+S23   Scaffold_23__1_contigs__length_18116493.2449928        1    T    C   0.2442     21       86
+S23   Scaffold_23__1_contigs__length_18116493.2449928        2    T    C   0.2609     24       92
+```{}
+plink --map ../GCRF_base_file.map_loc.map --ped ../GCRF_base_file_fin.ped --out GCRF_af_pop.S1.54132477 --freq --family --allow-extra-chr --snp Scaffold_1__1_contigs__length_151072562.54132477
+```
+ CHR                                                SNP     CLST   A1   A2      MAF    MAC  NCHROBS
+S1   Scaffold_1__1_contigs__length_151072562.54132477        1    A    G   0.1977     17       86
+S1   Scaffold_1__1_contigs__length_151072562.54132477        2    A    G   0.1196     11       92
+```{}
+plink --map ../GCRF_base_file.map_loc.map --ped ../GCRF_base_file_fin.ped --out GCRF_af_pop.S3.112330666 --freq --family --allow-extra-chr --snp Scaffold_3__1_contigs__length_112408489.112330666
+```
+ CHR                                                 SNP     CLST   A1   A2      MAF    MAC  NCHROBS
+S3   Scaffold_3__1_contigs__length_112408489.112330666        1    T    C  0.02326      2       86
+S3   Scaffold_3__1_contigs__length_112408489.112330666        2    T    C  0.07609      7       92
+```{}
+plink --map ../GCRF_base_file.map_loc.map --ped ../GCRF_base_file_fin.ped --out GCRF_af_pop.S5.65589803 --freq --family --allow-extra-chr --snp Scaffold_5__1_contigs__length_71959612.65589803
+```
+ CHR                                               SNP     CLST   A1   A2      MAF    MAC  NCHROBS
+S5   Scaffold_5__1_contigs__length_71959612.65589803        1    G    A   0.2442     21       86
+S5   Scaffold_5__1_contigs__length_71959612.65589803        2    G    A   0.3804     35       92
+```{}
+plink --map ../GCRF_base_file.map_loc.map --ped ../GCRF_base_file_fin.ped --out GCRF_af_pop.S7.31872111 --freq --family --allow-extra-chr --snp Scaffold_7__1_contigs__length_62267870.31872111
+```
+CHR                                               SNP     CLST   A1   A2      MAF    MAC  NCHROBS
+S7   Scaffold_7__1_contigs__length_62267870.31872111        1    A    G   0.1512     13       86
+S7   Scaffold_7__1_contigs__length_62267870.31872111        2    A    G   0.1413     13       92
+
 
 # FINAL FIGURES
 ## ARHGAP26 Gene
