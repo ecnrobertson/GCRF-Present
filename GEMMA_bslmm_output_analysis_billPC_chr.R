@@ -82,7 +82,7 @@ dev.off()
 
 # library to speed up loading of big tables
 
-setwd("GenomicPipeline/data/bslmm")
+setwd("~/Desktop/GCRF/GCRF-Present/GenomicPipeline/data/bslmm")
 
 library(data.table)
 
@@ -170,9 +170,11 @@ chr<-params$ZFCHROM
 
 # sort by linkage group and position
 params.sort<-params[order(as.numeric(params$ZFCHROM), params$ZFPOS),]
+#write.table(params.sort, file="param.sort.txt", sep=" ", col.names = T, row.name=F)
 
 # get list of linkage groups/chromosomes
 chrs<-sort(unique(as.numeric(chr)))
+
 # ------------------------------------------------------------------------------
 
 # Plot to a png file because the number of dots is very high
@@ -180,10 +182,10 @@ chrs<-sort(unique(as.numeric(chr)))
 # also opening vectorial files with many objects is slow
 # ------------------------------------------------------------------------------
 # ------------------------------------------------------------------------------
-png(file="../bslmm/new_pip_plot_bill0.01_chr.png", width=11.7,height=8.3,units="in",res=200)
+png(file="../../../figures/bill0.01_chr2.png", width=11.7,height=8.3,units="in",res=200)
 
 # set up empty plot
-plot(-1,-1,xlim=c(0,nrow(params.sort)),ylim=c(0,1),ylab="PIP",xlab="Chromosome", xaxt="n")
+plot(-1,-1,xlim=c(0,nrow(params.sort)),ylim=c(0,.3),ylab="PIP",xlab="Chromosome", xaxt="n")
 
 # plot grey bands for chromosome/linkage groups
 # ------------------------------------------------------------------------------
@@ -208,6 +210,11 @@ size<-nrow(params.sort[params.sort$chr=="NA",])
 lab.pos<-c(lab.pos, start+size/2)
 # ------------------------------------------------------------------------------
 
+chrs=c("1", "1A", "2", "3", "4", "4A", "5", "6", "7", 
+                 "8", "9", "10", "11", "12", "13", "14",
+                 "15", "17", "18", "19", "20", "21",
+                 "22", "23", "24", "25", "26", "27", "28",
+                 "Z", "LGE22", "MT", "NA")
 # Add x axis labels
 axis(side=1,at=lab.pos,labels=chrs,tick=F)
 
@@ -242,7 +249,19 @@ symbols(x,y,circles=z, bg="tomato",inches=1/5,fg=NULL,add=T)
 # ------------------------------------------------------------------------------
 
 # add label high PIP variants
-text(x,y,labels=params.sort$rs[params.sort$gamma>=0.01], adj=c(0,0), cex=0.8)
+params.sort$rs[params.sort$rs == "Scaffold_2__1_contigs__length_114774641.85189033"] <- "INPP4A"
+params.sort$rs[params.sort$rs == "Scaffold_23__1_contigs__length_18116493.1385210"] <- ""
+params.sort$rs[params.sort$rs == "Scaffold_23__1_contigs__length_18116493.2449928"] <- "UBTD2 \n ARHGAP26"
+params.sort$rs[params.sort$rs == "Scaffold_1__1_contigs__length_151072562.54132477"] <- "KIAA1217"
+params.sort$rs[params.sort$rs == "Scaffold_1__1_contigs__length_151072562.138869993"] <- "APCDD1"
+params.sort$rs[params.sort$rs == "Scaffold_5__1_contigs__length_71959612.14244530"] <- "CPEB2"
+params.sort$rs[params.sort$rs == "Scaffold_7__1_contigs__length_62267870.31872111"] <- "ensembl"
+params.sort$rs[params.sort$rs == "Scaffold_2__1_contigs__length_114774641.103228656"] <- "S2.103228656"
+params.sort$rs[params.sort$rs == "Scaffold_1__1_contigs__length_151072562.108192624"] <- "S1.108192624"
+
+text(x,y,labels=params.sort$rs[params.sort$gamma>=0.01], cex=0.8, adj=c(-.4,-.4), srt=45)
+#text(x[params.sort$rs[params.sort$rs =="UBTD2"]]-10, y[params.sort$rs[params.sort$rs =="UBTD2"]], labels = params.sort$rs[params.sort$gamma >= 0.01]["UBTD2"], adj = c(0, -.5), cex = 0.8, srt =0)
+#text(x[params.sort$rs[params.sort$rs =="ARHGAP26"]]+10, y[params.sort$rs[params.sort$rs =="ARHGAP26"]], labels = params.sort$rs[params.sort$gamma >= 0.01]["ARHGAP26"], adj = c(1, -.5), cex = 0.8, srt = 0)
 # ------------------------------------------------------------------------------
 # ------------------------------------------------------------------------------
 
