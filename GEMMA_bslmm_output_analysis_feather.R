@@ -80,7 +80,7 @@ dev.off()
 
 # library to speed up loading of big tables
 
-setwd("~/Desktop/GCRF/GenomicPipeline/data/bslmm")
+setwd("~/Desktop/GCRF/GCRF-Present/GenomicPipeline/data/bslmm")
 
 library(data.table)
 
@@ -250,4 +250,99 @@ text(x,y,labels=params.sort$rs[params.sort$gamma>=0.01], adj=c(0,0), cex=0.8)
 # close device
 dev.off()
 # ==============================================================================
+
+
+chrs<-sort(unique(as.numeric(chr)))
+
+# ------------------------------------------------------------------------------
+
+# Plot to a png file because the number of dots is very high
+# drawing this kind of plot over the network is very slow
+# also opening vectorial files with many objects is slow
+# ------------------------------------------------------------------------------
+# ------------------------------------------------------------------------------
+png(file="../../../figures/feather0.01_chr.png", width=11.7,height=8.3,units="in",res=200)
+
+# set up empty plot
+plot(-1,-1,xlim=c(0,nrow(params.sort)),ylim=c(0,.3),ylab="PIP",xlab="Chromosome", xaxt="n")
+
+# plot grey bands for chromosome/linkage groups
+# ------------------------------------------------------------------------------
+start<-1
+lab.pos<-vector()
+for (ch in chrs){
+  size<-nrow(params.sort[params.sort$ZFCHROM==ch,])
+  cat ("CH: ", ch, "\n")
+  colour<-"lightgrey"
+  if (ch%%2 > 0){
+    polygon(c(start,start,start+size,start+size,start), c(0,1,1,0,0), col=colour, border=colour)
+  }
+  cat("CHR: ", ch, " variants: ", size, "(total: ", (start+size), ")\n")
+  txtpos<-start+size/2
+  lab.pos<-c(lab.pos, txtpos)
+  
+  start<-start+size
+}
+# Add variants outside linkage groups
+chrs<-c(chrs,"NA")
+size<-nrow(params.sort[params.sort$chr=="NA",])
+lab.pos<-c(lab.pos, start+size/2)
+# ------------------------------------------------------------------------------
+
+chrs=c("1", "1A", "2", "3", "4", "4A", "5", "6", "7", 
+       "8", "9", "10", "11", "12", "13", "14",
+       "15", "17", "18", "19", "20", "21",
+       "22", "23", "24", "25", "26", "27", "28",
+       "Z", "LGE22", "MT", "NA")
+# Add x axis labels
+axis(side=1,at=lab.pos,labels=chrs,tick=F)
+
+
+# ------------------------------------------------------------------------------
+# rank of variants across linkage groups
+x<-seq(1,length(params.sort$gamma),1)
+# PIP 
+y<-params.sort$gamma
+# sparse effect size, used for dot size
+z<-params.sort$eff
+# log-transform to enhance visibility
+z[z==0]<-0.00000000001
+z<-1/abs(log(z))
+# plot
+symbols(x,y,circles=z, bg="grey14",inches=1/5, fg=NULL,add=T)
+# ------------------------------------------------------------------------------
+
+# highligh high PIP variants (PIP>=0.25)
+# ------------------------------------------------------------------------------
+# plot threshold line
+abline(h=0.01,lty=3,col="dark grey")
+# rank of high PIP variants across linkage groups
+x<-match(params.sort$gamma[params.sort$gamma>=0.01],params.sort$gamma)
+# PIP
+y<-params.sort$gamma[params.sort$gamma>=0.01]
+# sparse effect size, used for dot size
+z<-params.sort$eff[params.sort$gamma>=0.01]
+z<-1/abs(log(z))
+
+symbols(x,y,circles=z, bg="tomato",inches=1/5,fg=NULL,add=T)
+# ------------------------------------------------------------------------------
+
+# add label high PIP variants
+params.sort$rs[params.sort$rs == "Scaffold_2__1_contigs__length_114774641.92336930"] <- "COL4A1 & "
+params.sort$rs[params.sort$rs == "Scaffold_2__1_contigs__length_114774641.80634326"] <- "NA"
+params.sort$rs[params.sort$rs == "Scaffold_1__1_contigs__length_151072562.128626182"] <- "GABBR2"
+params.sort$rs[params.sort$rs == "Scaffold_3__1_contigs__length_112408489.112330666"] <- "NA"
+params.sort$rs[params.sort$rs == "Scaffold_5__1_contigs__length_71959612.65589803"] <- "QRFPR"
+params.sort$rs[params.sort$rs == "Scaffold_8__1_contigs__length_35685229.25471973"] <- "RET"
+params.sort$rs[params.sort$rs == "Scaffold_1__1_contigs__length_151072562.146593939"] <- "S1.146593939"
+params.sort$rs[params.sort$rs == "Scaffold_6__1_contigs__length_71876329.60198070"] <- "S6.60198070"
+
+text(x,y,labels=params.sort$rs[params.sort$gamma>=0.01], cex=0.8, adj=c(-.4,-.4), srt=45)
+#text(x[params.sort$rs[params.sort$rs =="UBTD2"]]-10, y[params.sort$rs[params.sort$rs =="UBTD2"]], labels = params.sort$rs[params.sort$gamma >= 0.01]["UBTD2"], adj = c(0, -.5), cex = 0.8, srt =0)
+#text(x[params.sort$rs[params.sort$rs =="ARHGAP26"]]+10, y[params.sort$rs[params.sort$rs =="ARHGAP26"]], labels = params.sort$rs[params.sort$gamma >= 0.01]["ARHGAP26"], adj = c(1, -.5), cex = 0.8, srt = 0)
+# ------------------------------------------------------------------------------
+# ------------------------------------------------------------------------------
+
+# close device
+dev.off()
 
