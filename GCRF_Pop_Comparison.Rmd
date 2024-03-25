@@ -7,7 +7,13 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-knitr::opts_knit$set(root.dir = "~/Desktop/GCRF/GCRF-Present/R data/")
+#knitr::opts_knit$set(root.dir = "~/Desktop/GCRF/GCRF-Present/R data/")
+knitr::opts_knit$set(root.dir = "~/Desktop/GCRF/GCRF-Present/files/data/morphology/")
+```
+
+```{r, message=F}
+library(dplyr)
+library(ggpubr)
 ```
 
 ```{r}
@@ -15,20 +21,135 @@ feather <- read.csv("GCRF_feather_morpho.csv")
 head(feather)
 traits <- c("Penn_length", "Penn_number", "Plum_length", "Plum_number", "Nodes")
 
-for (i in traits){
-  i <- feather %>%
-  group_by(Individual) %>%
-  summarize(Avg=mean(i))
-  
+avg.trait <- data.frame(unique(feather$ID)) %>% rename(ID=unique.feather.ID.)
+
+for (trait in traits){
+  avg <- feather %>%
+  group_by(ID) %>%
+  summarize(Avg=mean(get(trait)))
+  avg.trait <- left_join(avg.trait, avg, by="ID")
 }
 
+colnames(avg.trait) <- c("ID", "Penn_length", "Penn_number", "Plum_length", "Plum_number", "Nodes")
+locations <- read.table("locID.txt") %>% rename (loc=V1, ID=V2)
+avg.trait <- left_join(locations, avg.trait, by="ID")
+```
 
-for (i in seq_along(bill_data_list)){
-  df <- bill_data_list[[i]]
-  col_name <- colnames(df)[7]
-  ped_file <- data.frame(bill.PC_ped_file, df[,7])
-  colnames(ped_file) <- c("FID", "IID", "PAT", "MAT", "SEX", "PHENOTYPE", "GENOTYPE")
-  bill_ped_files[[col_name]] <- ped_file
+White mountains is colder
+```{r}
+#expect PP > WM
+ggqqplot(avg.trait$Penn_length)
+#not normal
+wilcox.test(Penn_length ~ loc, data=avg.trait, alternative="greater")
+#not significant
+
+#expect PP > WM
+ggqqplot(avg.trait$Penn_number)
+#not normal
+wilcox.test(Penn_number ~ loc, data=avg.trait, alternative="greater")
+#not significant
+
+#expect PP<WM
+ggqqplot(avg.trait$Plum_length)
+t.test(Plum_length ~ loc, data=avg.trait, alternative="less")
+t.test(Plum_length ~ loc, data=avg.trait, alternative="greater")
+#0.06746 with "greater than"
+
+#expect PP<WM
+ggqqplot(avg.trait$Plum_number)
+t.test(Plum_number ~ loc, data=avg.trait, alternative="less")
+t.test(Plum_number ~ loc, data=avg.trait, alternative="greater")
+#not significant either way
+
+#expect PP<WM
+ggqqplot(avg.trait$Nodes)
+wilcox.test(Nodes ~ loc, data=avg.trait, alternative="less")
+wilcox.test(Nodes ~ loc, data=avg.trait, alternative="greater")
+```
+
+###############################################################################################################################################
+Okay so the above is without the 2019 samples, and nothing was significant. The following is with the 2019 samples and there is significance.
+
+```{r}
+feather <- read.csv("GCRF_Data.csv") %>% rename(ID=Individual)
+feather <- feather[,1:8]
+head(feather)
+traits <- c("Pen_Length", "Pen_Density", "Plu_Length", "Plu_Density", "Plu_Nodes")
+
+avg.trait <- feather %>% group_by(ID, Location) %>% summarize(Avg=mean(Pen_Length))
+avg.trait <- avg.trait[,1:2]
+
+for (trait in traits){
+  avg <- feather %>%
+  group_by(ID, Location) %>%
+  summarize(Avg=mean(get(trait)))
+  avg.trait <- left_join(avg.trait, avg, by=c("ID", "Location"))
 }
 
+colnames(avg.trait) <- c("ID", "loc", "Penn_length", "Penn_number", "Plum_length", "Plum_number", "Nodes")
+```
+
+White mountains is colder
+```{r}
+#expect PP > WM
+ggqqplot(avg.trait$Penn_length)
+#not normal
+wilcox.test(Penn_length ~ loc, data=avg.trait, alternative="greater")
+#0.0476
+
+ggplot(data=avg.trait, aes(x=loc, y=Penn_length, color=loc, fill=loc))+
+  scale_color_manual(values=c("tomato2", "lightblue3"))+
+  geom_violin(alpha=.3)+
+  scale_fill_manual(values=c("tomato2", "lightblue3"))+
+  geom_boxplot(width=.1, fill="white")+
+  theme_classic()+
+  labs(x="Population", y="Pennaceous Barbule Length (mm)")
+```
+
+```{r}
+#expect PP > WM
+ggqqplot(avg.trait$Penn_number)
+#not normal
+wilcox.test(Penn_number ~ loc, data=avg.trait, alternative="greater")
+#not significant
+````
+
+
+```{r}
+#expect PP<WM
+ggqqplot(avg.trait$Plum_length)
+t.test(Plum_length ~ loc, data=avg.trait, alternative="less")
+t.test(Plum_length ~ loc, data=avg.trait, alternative="greater")
+#0.033 with "greater than"
+
+ggplot(data=avg.trait, aes(x=loc, y=Plum_length, color=loc, fill=loc))+
+  scale_color_manual(values=c("tomato2", "lightblue3"))+
+  geom_violin(alpha=.3)+
+  scale_fill_manual(values=c("tomato2", "lightblue3"))+
+  geom_boxplot(width=.1, fill="white")+
+  theme_classic()+
+  labs(x="Population", y="Plumulaceous Barbule Length (mm)")
+```
+
+```{r}
+#expect PP<WM
+ggqqplot(avg.trait$Plum_number)
+t.test(Plum_number ~ loc, data=avg.trait, alternative="less")
+t.test(Plum_number ~ loc, data=avg.trait, alternative="greater")
+#not significant either way
+```
+
+```{r}
+#expect PP<WM
+ggqqplot(avg.trait$Nodes)
+wilcox.test(Nodes ~ loc, data=avg.trait, alternative="less")
+#0.00982
+
+ggplot(data=avg.trait, aes(x=loc, y=Nodes, color=loc, fill=loc))+
+  scale_color_manual(values=c("tomato2", "lightblue3"))+
+  geom_violin(alpha=.3)+
+  scale_fill_manual(values=c("tomato2", "lightblue3"))+
+  geom_boxplot(width=.1, fill="white")+
+  theme_classic()+
+  labs(x="Population", y="Plumulaceous Node Density (count/.1 mm)")
 ```
