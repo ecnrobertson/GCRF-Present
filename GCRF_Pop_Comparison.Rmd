@@ -1,0 +1,34 @@
+---
+title: "GCRF_Pop_Comparison"
+author: "Erica Robertson"
+date: "2024-03-25"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "~/Desktop/GCRF/GCRF-Present/R data/")
+```
+
+```{r}
+feather <- read.csv("GCRF_feather_morpho.csv")
+head(feather)
+traits <- c("Penn_length", "Penn_number", "Plum_length", "Plum_number", "Nodes")
+
+for (i in traits){
+  i <- feather %>%
+  group_by(Individual) %>%
+  summarize(Avg=mean(i))
+  
+}
+
+
+for (i in seq_along(bill_data_list)){
+  df <- bill_data_list[[i]]
+  col_name <- colnames(df)[7]
+  ped_file <- data.frame(bill.PC_ped_file, df[,7])
+  colnames(ped_file) <- c("FID", "IID", "PAT", "MAT", "SEX", "PHENOTYPE", "GENOTYPE")
+  bill_ped_files[[col_name]] <- ped_file
+}
+
+```

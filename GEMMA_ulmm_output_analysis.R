@@ -370,6 +370,7 @@ c <- width[order(as.numeric(width$ZFCHROM)),]
 c <- c %>% mutate(win_num = 1:nrow(c))
 #c2 <- c[sample(nrow(c), size=200000, replace = F),]
 #c2 <- c2[order(as.numeric(c2$ZFCHROM)),] %>% mutate(win_num = 1:nrow(c2))
+c2 <- c[sample(nrow(c), size=200000, replace = F),]
 
 dim(c)
 out<-c %>% filter(outlier=="outlier")
@@ -407,19 +408,22 @@ g2<-ggplot(c, aes(x=win_num, y=-log10(p_wald),color=as.factor(ZFCHROM))) +
   scale_x_continuous(breaks = specific_breaks, labels = specific_labels, ) +
   #scale_x_continuous(breaks = waiver())+
   #scale_x_continuous(expand = c(0,0))+
-  scale_y_continuous(expand = c(0, 0), limits=c(0,8) ) +     # remove space between plot area and x axis
+  scale_y_continuous(expand = c(0, 0), limits=c(0,9) ) +     # remove space between plot area and x axis
   geom_point(data=subset(c, outlier=="outlier"), color="tomato2", size=1.2) +
-  
-  # Add label using ggrepel to avoid overlapping
+  geom_text(x=1950000, y=7.9, label="CTDSPL", color="black", angle=45, size=3)+
   #geom_label_repel( data=subset(don, is_highlight=="yes"), aes(label=label), size=2,segment.color = "black",segment.size = .3,min.segment.length = unit(0, 'lines'),nudge_y = .03) +
-  theme_bw() +
+  theme_classic() +
   theme( 
-    legend.position="none",
-    panel.border = element_blank(),
-    panel.grid.major.x = element_blank(),
-    panel.grid.minor.x = element_blank()) +
-  labs(x="Scaffold",y="-log10(p-value)")
+    legend.position="none")
+    #panel.border = element_blank()+
+    #panel.grid.major.x = element_blank(),
+    #panel.grid.minor.x = element_blank()) +
+  labs(x="Chromosome",y="-log10(p-value)")
 
-png("../../../figures/GCRF.culmen_lmm.assoc.newxaxis.short.png",width=11.7,height=5,units="in", res=200)
+png("../../../figures/GCRF.culmen_lmm.assoc.newxaxis.short.label.png",width=11.7,height=5,units="in", res=200)
+ggarrange(g2)
+dev.off()
+
+pdf("../../../figures/GCRF.culmen_lmm.assoc.final.pdf",width=11.7,height=5)
 ggarrange(g2)
 dev.off()
