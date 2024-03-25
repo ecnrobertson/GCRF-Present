@@ -2049,17 +2049,17 @@ write.table(beak_gene_names, "/Users/ericarobertson/Desktop/GCRF/GCRF-Present/Ge
 4 Scaffold_1__1_contigs__length_151072562.54132477 gene_id ENSTGUG00000001172 gene_name KIAA1217
 5 Scaffold_1__1_contigs__length_151072562.138869993 gene_id ENSTGUG00000009758 gene_name APCDD1
 6 Scaffold_5__1_contigs__length_71959612.14244530 gene_id ENSTGUG00000009822 gene_name CPEB2
-7 Scaffold_7__1_contigs__length_62267870.31872111 gene_id ENSTGUG00000011762 gene_source ensembl
+7 Scaffold_7__1_contigs__length_62267870.31872111 gene_id ENSTGUG00000011762 gene_source LOC100224784
 
 ### bill length genes
 1 Scaffold_1__1_contigs__length_151072562.39837818 gene_id ENSTGUG00000000374 CTDSPL
 
 ### Feather PC Genes
 1 Scaffold_2__1_contigs__length_114774641.92336930 gene_id ENSTGUG00000008693 gene_name COL4A1
-2 Scaffold_2__1_contigs__length_114774641.92336930 gene_id ENSTGUG00000008766 
-3 Scaffold_2__1_contigs__length_114774641.80634326 gene_id ENSTGUG00000010798 
+2 Scaffold_2__1_contigs__length_114774641.92336930 gene_id ENSTGUG00000008766 COL4A2
+3 Scaffold_2__1_contigs__length_114774641.80634326 gene_id ENSTGUG00000010798 NALF1
 4 Scaffold_1__1_contigs__length_151072562.128626182 gene_id ENSTGUG00000008527 gene_name GABBR2
-5 Scaffold_3__1_contigs__length_112408489.112330666 gene_id ENSTGUG00000002140 
+5 Scaffold_3__1_contigs__length_112408489.112330666 gene_id ENSTGUG00000002140 Ninl
 6 Scaffold_5__1_contigs__length_71959612.65589803 gene_id ENSTGUG00000001929 gene_name QRFPR
 7 Scaffold_8__1_contigs__length_35685229.25471973 gene_id ENSTGUG00000006250 gene_name RET
 
