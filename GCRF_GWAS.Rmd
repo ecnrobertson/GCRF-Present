@@ -2052,7 +2052,7 @@ write.table(beak_gene_names, "/Users/ericarobertson/Desktop/GCRF/GCRF-Present/Ge
 7 Scaffold_7__1_contigs__length_62267870.31872111 gene_id ENSTGUG00000011762 gene_source ensembl
 
 ### bill length genes
-1 Scaffold_1__1_contigs__length_151072562.39837818 gene_id ENSTGUG00000000374
+1 Scaffold_1__1_contigs__length_151072562.39837818 gene_id ENSTGUG00000000374 CTDSPL
 
 ### Feather PC Genes
 1 Scaffold_2__1_contigs__length_114774641.92336930 gene_id ENSTGUG00000008693 gene_name COL4A1
